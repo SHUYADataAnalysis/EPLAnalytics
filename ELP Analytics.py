@@ -48,68 +48,28 @@ C = dict(
 st.set_page_config(page_title="EPL Analytics", layout="wide", page_icon="⚽")
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Bebas+Neue&display=swap');
-
-html, body { background: #f5f7fa !important; }
-[data-testid="stAppViewContainer"] { background: #f5f7fa !important; }
-[data-testid="stAppViewContainer"] > .main { background: #f5f7fa !important; }
-.main .block-container { background: #f5f7fa !important; }
-
-p, span, li, td, th { color: #1a1a2e !important; }
-.stMarkdown, .stMarkdown * { color: #1a1a2e !important; }
-[data-testid="stMarkdownContainer"] * { color: #1a1a2e !important; }
-h1, h2, h3, h4 { color: #1a1a2e !important; }
-label { color: #1a1a2e !important; }
-[data-testid="stWidgetLabel"] { color: #1a1a2e !important; }
-[data-testid="stWidgetLabel"] * { color: #1a1a2e !important; }
-
-[data-testid="stSidebar"] { background: #1e2d3d !important; }
-[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 { color: #ffffff !important; }
-[data-testid="stSidebar"] [data-testid="stWidgetLabel"] * { color: #b0c4d8 !important; }
-
-.stSelectbox > div > div > div { background: #ffffff !important; color: #1a1a2e !important; }
-.stMultiSelect > div > div > div { background: #ffffff !important; color: #1a1a2e !important; }
-[data-baseweb="select"] * { color: #1a1a2e !important; }
-[data-baseweb="popover"] { background: #ffffff !important; }
-[data-baseweb="popover"] * { color: #1a1a2e !important; background: #ffffff !important; }
-[data-baseweb="option"] { color: #1a1a2e !important; background: #ffffff !important; }
-[data-baseweb="option"]:hover { background: #e8f4fd !important; }
-[data-baseweb="tag"] { background: #1a5c36 !important; }
-[data-baseweb="tag"] span { color: #ffffff !important; }
-input { background: #ffffff !important; color: #1a1a2e !important; }
-input[type="password"] { color: #1a1a2e !important; }
-
-.stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid #1a5c36; }
-.stTabs [data-baseweb="tab"] {
-  background: #e8f0eb; border-radius: 6px 6px 0 0;
-  color: #1a1a2e !important; font-weight: 600; font-size: .82rem; padding: 6px 14px;
-}
-.stTabs [aria-selected="true"] { background: #1a5c36 !important; }
-.stTabs [aria-selected="true"] * { color: #ffffff !important; }
-
-.section-bar {
-  height: 4px;
-  background: linear-gradient(90deg, #1a5c36, #c45c00, #0077aa, transparent);
-  margin: .5rem 0 1rem; border-radius: 2px;
-}
-[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
-[data-testid="stDataFrame"] * { color: #1a1a2e !important; }
-
-[data-testid="stNotification"] { background: #e8f4fd !important; }
-[data-testid="stNotification"] * { color: #1a1a2e !important; }
-.stAlert * { color: #1a1a2e !important; }
-[data-testid="stSuccess"] { background: #dcfce7 !important; }
-[data-testid="stSuccess"] * { color: #166534 !important; }
-[data-testid="stError"] { background: #fee2e2 !important; }
-[data-testid="stError"] * { color: #991b1b !important; }
-
-.stRadio * { color: #1a1a2e !important; }
-.stSlider * { color: #1a1a2e !important; }
-.stMultiSelect * { color: #1a1a2e !important; }
-.stCaptionContainer { color: #444444 !important; }
+html,body,[data-testid="stAppViewContainer"],[data-testid="stAppViewContainer"]>.main,.main .block-container{background:#f5f7fa !important;}
+p,span,li,td,th,label{color:#1a1a2e !important;}
+.stMarkdown *,[data-testid="stMarkdownContainer"] *{color:#1a1a2e !important;}
+h1,h2,h3,h4{color:#1a1a2e !important;}
+[data-testid="stWidgetLabel"],[data-testid="stWidgetLabel"] *{color:#1a1a2e !important;}
+[data-testid="stSidebar"]{background:#1e2d3d !important;}
+[data-testid="stSidebar"] *{color:#e2e8f0 !important;}
+[class*="valueContainer"] *,[class*="singleValue"]{color:#1a1a2e !important;}
+[data-baseweb="select"] span{color:#1a1a2e !important;}
+input,textarea{color:#1a1a2e !important;background:#fff !important;}
+[data-baseweb="popover"] *,[data-baseweb="menu"] *{color:#1a1a2e !important;background:#fff !important;}
+[data-baseweb="option"]{color:#1a1a2e !important;background:#fff !important;}
+[data-baseweb="tag"] *{color:#fff !important;}
+.stTabs [data-baseweb="tab"]{background:#e8f0eb;color:#1a1a2e !important;font-weight:600;}
+.stTabs [aria-selected="true"]{background:#1a5c36 !important;}
+.stTabs [aria-selected="true"] *{color:#fff !important;}
+.section-bar{height:4px;background:linear-gradient(90deg,#1a5c36,#c45c00,#0077aa,transparent);margin:.5rem 0 1rem;border-radius:2px;}
+[data-testid="stDataFrame"],[data-testid="stDataFrame"] *{color:#1a1a2e !important;}
+[data-testid="stNotification"] *{color:#1a1a2e !important;}
+[data-testid="stSuccess"] *{color:#166534 !important;}
+[data-testid="stError"] *{color:#991b1b !important;}
+[data-testid="stWarning"] *{color:#92400e !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -123,15 +83,22 @@ EPL_LEAGUE = 39
 SEASON_TO_APF = {"2025-26": 2025, "2024-25": 2024, "2023-24": 2023, "2022-23": 2022}
 
 def _apf_get(endpoint: str, params: dict, api_key: str) -> dict | None:
-    """API-Football への単一リクエスト"""
+    """API-Football への単一リクエスト（エラー詳細をセッションに記録）"""
     hdrs = {"x-apisports-key": api_key, "Accept": "application/json"}
     try:
         r = requests.get(f"{APF_BASE}/{endpoint}", headers=hdrs,
                          params=params, timeout=15)
         if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
+            d = r.json()
+            # API側のエラーレスポンスを確認
+            if d.get("errors"):
+                st.session_state["apf_last_error"] = str(d["errors"])
+                return None
+            return d
+        else:
+            st.session_state["apf_last_error"] = f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        st.session_state["apf_last_error"] = str(e)
     return None
 
 
@@ -173,8 +140,19 @@ def fetch_finished_fixture_ids(season_str: str, api_key: str) -> list:
         if f.get("fixture", {}).get("status", {}).get("short") in finished_statuses
     ]
 
-    if ids:  # 空リストはキャッシュしない
+    if ids:
         st.session_state[_fid_key] = ids
+    else:
+        # デバッグ: APIレスポンスの内容をセッションに保存
+        if data:
+            _resp = data.get("response", [])
+            _errs = data.get("errors", {})
+            st.session_state["apf_debug"] = (
+                f"response件数={len(_resp)}, errors={_errs}, "
+                f"results={data.get('results',0)}"
+            )
+        else:
+            st.session_state["apf_debug"] = "APIレスポンスがNone（接続エラー）"
     return ids
 
 
@@ -370,10 +348,7 @@ def prep_players(df_raw, team_id_map):
     df["goals_p90"]    = df["goals_scored"] / df["mins_p90"]
     df["assists_p90"]  = df["assists"] / df["mins_p90"]
     df["saves_p90"]    = df["saves"] / df["mins_p90"]
-    df["tackles_p90"]  = df["tackles"] / df["mins_p90"]
-    df["recoveries_p90"] = df["recoveries"] / df["mins_p90"]
-    df["cbi_p90"]      = df["clearances_blocks_interceptions"] / df["mins_p90"]
-    df["def_contribution_p90"] = df["defensive_contribution"] / df["mins_p90"]
+    # 守備指標のp90計算はcompute()内で実施（mins_p90依存のため）
     return df
 
 def build_team_stats(dg_raw, team_id_map):
@@ -649,8 +624,10 @@ if apf_enabled:
 
     # 取得状況をサイドバーに表示
     if n_total == 0:
-        st.sidebar.warning("⚠️ 試合IDを取得できません。APIキーと接続を確認してください")
-        st.sidebar.caption(f"season={season}, league={EPL_LEAGUE}")
+        _last_err = st.session_state.get("apf_last_error", "詳細不明")
+        st.sidebar.warning("⚠️ 試合IDを取得できません")
+        st.sidebar.caption(f"Error: {_last_err}")
+        st.sidebar.caption(f"season={season} → APF:{SEASON_TO_APF.get(season)}, league={EPL_LEAGUE}")
     else:
         st.sidebar.markdown(f"⚡ **{n_cached}/{n_total}試合 取得済み**",
                             unsafe_allow_html=True)
