@@ -146,24 +146,36 @@ def check_apf_key(api_key: str) -> tuple:
     return False, 0, 0
 
 
-@st.cache_data(ttl=600, show_spinner=False)   # 10分キャッシュ（短め）
 def fetch_finished_fixture_ids(season_str: str, api_key: str) -> list:
-    """全試合IDを取得し終了済み(FT/AET/PEN)のみ返す（1リクエスト消費）"""
+    """
+    全試合IDを取得し終了済み(FT/AET/PEN)のみ返す（1リクエスト消費）。
+    session_stateで簡易キャッシュ（ページ内で重複呼び出しを防ぐ）。
+    """
+    # セッションキャッシュから返す（同一セッション内で再利用）
+    _fid_key = f"fixture_ids_{season_str}"
+    if _fid_key in st.session_state and st.session_state[_fid_key]:
+        return st.session_state[_fid_key]
+
     apf_season = SEASON_TO_APF.get(season_str)
     if not apf_season:
         return []
-    # status パラメータなし → 全試合取得してPython側でフィルタ
+
     data = _apf_get("fixtures",
                     {"league": EPL_LEAGUE, "season": apf_season},
                     api_key)
     if not data:
         return []
+
     finished_statuses = {"FT", "AET", "PEN"}
-    return [
+    ids = [
         f["fixture"]["id"]
         for f in data.get("response", [])
         if f.get("fixture", {}).get("status", {}).get("short") in finished_statuses
     ]
+
+    if ids:  # 空リストはキャッシュしない
+        st.session_state[_fid_key] = ids
+    return ids
 
 
 def _parse_stats(response: list) -> dict:
@@ -652,8 +664,11 @@ if apf_enabled:
 
     # キャッシュクリアボタン（試合ID再取得用）
     if st.sidebar.button("🔄 試合ID再取得", key="clear_fid",
-                          help="試合IDのキャッシュをクリアして再取得します"):
-        st.cache_data.clear()
+                          help="キャッシュをクリアして試合IDを再取得します"):
+        # session_state の fixture_ids キャッシュをクリア
+        for k in list(st.session_state.keys()):
+            if k.startswith("fixture_ids_"):
+                del st.session_state[k]
         st.rerun()
 
     if do_fetch and n_total > 0 and apf_remain > 3:
@@ -672,19 +687,25 @@ tcmap       = team_color_map(df_teams["team_name"].tolist())
 
 # ── Header ────────────────────────────────────────────────────────────────────
 _view_label = "Team" if "Team" in page else "Player"
-st.markdown(f"""
-<div style="background:#0f172a;border-radius:10px;padding:1rem 1.5rem;
-            margin-bottom:.8rem;border-left:6px solid #1a5c36">
-  <h1 style="color:#ffffff;font-size:2.4rem;font-weight:900;
-             letter-spacing:.05em;margin:0;line-height:1.1;
-             font-family:Georgia,serif;">EPL Analytics</h1>
-  <div style="color:#94a3b8;font-size:.82rem;font-weight:600;
-              letter-spacing:.04em;margin-top:.3rem">
-    {season} &nbsp;·&nbsp; Custom Metrics Builder &nbsp;·&nbsp; {_view_label} View
-  </div>
-</div>
-<div class="section-bar"></div>
-""", unsafe_allow_html=True)
+_subtitle   = f"{season}  ·  Custom Metrics Builder  ·  {_view_label} View"
+
+# SVGヘッダー（CSSに依存しないため確実に表示）
+_svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="900" height="90" viewBox="0 0 900 90">
+  <rect width="900" height="90" rx="10" fill="#0f172a"/>
+  <rect width="6" height="90" rx="3" fill="#1a5c36"/>
+  <text x="22" y="52" font-family="Arial Black,Arial,sans-serif"
+        font-size="32" font-weight="900" letter-spacing="2"
+        fill="#ffffff">EPL Analytics</text>
+  <text x="22" y="74" font-family="Arial,sans-serif"
+        font-size="11" font-weight="600" fill="#94a3b8">{_subtitle}</text>
+</svg>"""
+import base64 as _b64
+_svg_b64 = _b64.b64encode(_svg.encode()).decode()
+st.markdown(
+    f'<img src="data:image/svg+xml;base64,{_svg_b64}" style="width:100%;display:block">',
+    unsafe_allow_html=True
+)
+st.markdown("<div style='height:4px;background:linear-gradient(90deg,#1a5c36,#c45c00,#0077aa,transparent);border-radius:2px;margin-bottom:1rem'></div>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TEAM ANALYSIS
