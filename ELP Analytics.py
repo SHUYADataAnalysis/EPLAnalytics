@@ -146,19 +146,24 @@ def check_apf_key(api_key: str) -> tuple:
     return False, 0, 0
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)   # 10分キャッシュ（短め）
 def fetch_finished_fixture_ids(season_str: str, api_key: str) -> list:
-    """終了済み試合のIDリストを取得（1リクエスト消費）"""
+    """全試合IDを取得し終了済み(FT/AET/PEN)のみ返す（1リクエスト消費）"""
     apf_season = SEASON_TO_APF.get(season_str)
     if not apf_season:
         return []
+    # status パラメータなし → 全試合取得してPython側でフィルタ
     data = _apf_get("fixtures",
-                    {"league": EPL_LEAGUE, "season": apf_season, "status": "FT"},
+                    {"league": EPL_LEAGUE, "season": apf_season},
                     api_key)
     if not data:
         return []
-    ids = [f["fixture"]["id"] for f in data.get("response", [])]
-    return ids
+    finished_statuses = {"FT", "AET", "PEN"}
+    return [
+        f["fixture"]["id"]
+        for f in data.get("response", [])
+        if f.get("fixture", {}).get("status", {}).get("short") in finished_statuses
+    ]
 
 
 def _parse_stats(response: list) -> dict:
@@ -631,24 +636,30 @@ if apf_enabled:
     n_cached = len([k for k in cached_dict if str(k) in [str(f) for f in fixture_ids]])
 
     # 取得状況をサイドバーに表示
-    st.sidebar.markdown(
-        f"⚡ **試合スタッツ: {n_cached}/{n_total}**",
-        unsafe_allow_html=True
-    )
-    if n_cached < n_total:
-        st.sidebar.caption(f"未取得: {n_total - n_cached}試合")
+    if n_total == 0:
+        st.sidebar.warning("⚠️ 試合IDを取得できません。APIキーと接続を確認してください")
+        st.sidebar.caption(f"season={season}, league={EPL_LEAGUE}")
+    else:
+        st.sidebar.markdown(f"⚡ **{n_cached}/{n_total}試合 取得済み**",
+                            unsafe_allow_html=True)
 
-    # 手動取得ボタン（1日1クリック推奨）
+    # 手動取得ボタン
     fetch_col1, fetch_col2 = st.sidebar.columns([2,1])
     fetch_n = fetch_col1.number_input("取得数", 10, 95, 80, 10, key="fetch_n",
                                        label_visibility="collapsed")
     do_fetch = fetch_col2.button("📡 取得", key="do_fetch",
-                                  help=f"APIから最大{fetch_n}試合を取得します（残りリクエスト: {apf_remain}）")
+                                  help=f"未取得の試合を最大{int(fetch_n)}件取得します")
 
-    if do_fetch and n_cached < n_total and apf_remain > 5:
+    # キャッシュクリアボタン（試合ID再取得用）
+    if st.sidebar.button("🔄 試合ID再取得", key="clear_fid",
+                          help="試合IDのキャッシュをクリアして再取得します"):
+        st.cache_data.clear()
+        st.rerun()
+
+    if do_fetch and n_total > 0 and apf_remain > 3:
         fixture_cache = fetch_and_cache_stats(
             fixture_ids, api_key_input,
-            max_per_run=min(int(fetch_n), apf_remain - 3)
+            max_per_run=min(int(fetch_n), apf_remain - 2)
         )
     else:
         fixture_cache = {int(k): v for k, v in cached_dict.items()
@@ -660,13 +671,16 @@ if apf_enabled:
 tcmap       = team_color_map(df_teams["team_name"].tolist())
 
 # ── Header ────────────────────────────────────────────────────────────────────
+_view_label = "Team" if "Team" in page else "Player"
 st.markdown(f"""
-<div style="background:{C['dark']};border-radius:10px;padding:1rem 1.5rem;
-            margin-bottom:.8rem;border-left:6px solid {C['pitch']}">
-  <h1 style="color:#ffffff !important;font-family:'Bebas Neue',sans-serif;font-size:2.6rem;letter-spacing:.05em;margin:0;line-height:1.1;">EPL Analytics</h1>
-  <div style="color:#cbd5e1;font-size:.82rem;font-weight:600;letter-spacing:.04em;margin-top:.2rem">
-    {season} &nbsp;·&nbsp; Custom Metrics Builder &nbsp;·&nbsp;
-    {"Team" if "Team" in page else "Player"} View
+<div style="background:#0f172a;border-radius:10px;padding:1rem 1.5rem;
+            margin-bottom:.8rem;border-left:6px solid #1a5c36">
+  <h1 style="color:#ffffff;font-size:2.4rem;font-weight:900;
+             letter-spacing:.05em;margin:0;line-height:1.1;
+             font-family:Georgia,serif;">EPL Analytics</h1>
+  <div style="color:#94a3b8;font-size:.82rem;font-weight:600;
+              letter-spacing:.04em;margin-top:.3rem">
+    {season} &nbsp;·&nbsp; Custom Metrics Builder &nbsp;·&nbsp; {_view_label} View
   </div>
 </div>
 <div class="section-bar"></div>
@@ -983,9 +997,18 @@ else:
         "Minutes":        ("minutes",                      "Total minutes played",       "Availability"),
         "Starts":         ("starts",                       "Number of starts",           "Availability"),
         "Yellow Cards":   ("yellow_cards",                 "Yellow cards",               "Discipline"),
-        "Bonus":          ("bonus",                        "FPL Bonus points",           "FPL"),
-        "FPL Points":     ("total_points",                 "Total FPL points",           "FPL"),
-        "Price (£M)":     ("price_m",                     "Current FPL price",          "FPL"),
+        "Red Cards":      ("red_cards",                    "Red cards",                  "Discipline"),
+        "Tackles":        ("tackles",                      "Tackles (2025-26+)",          "Defense"),
+        "Tackles p90":    ("tackles_p90",                  "Tackles per 90 mins",         "Defense"),
+        "Recoveries":     ("recoveries",                   "Ball recoveries (2025-26+)",  "Defense"),
+        "Recoveries p90": ("recoveries_p90",               "Recoveries per 90 mins",      "Defense"),
+        "CBI":            ("clearances_blocks_interceptions","Clearances+Blocks+Interceptions","Defense"),
+        "CBI p90":        ("cbi_p90",                      "CBI per 90 mins",             "Defense"),
+        "Def Contribution":("defensive_contribution",      "Defensive contribution score","Defense"),
+        "Def Contribution p90":("def_contribution_p90",   "Def contribution per 90",     "Defense"),
+        "Bonus":          ("bonus",                        "FPL Bonus points",            "FPL"),
+        "FPL Points":     ("total_points",                 "Total FPL points",            "FPL"),
+        "Price (£M)":     ("price_m",                     "Current FPL price",           "FPL"),
     }
     all_player_labels = list(PLAYER_METRICS.keys())
 
@@ -1070,7 +1093,10 @@ else:
             if col_r not in df_filt.columns:
                 st.warning(f"Column '{col_r}' not available.")
             else:
-                df_top = (df_filt[["player_name","team_name","position","minutes", col_r]]
+                # col_r が "minutes" 等の固定列と重複する場合の対処
+                _base_cols = ["player_name","team_name","position","minutes"]
+                _show_cols = _base_cols if col_r in _base_cols else _base_cols + [col_r]
+                df_top = (df_filt[list(dict.fromkeys(_show_cols))]  # 重複除去
                           .sort_values(col_r, ascending=False)
                           .head(int(show_n))
                           .reset_index(drop=True))
