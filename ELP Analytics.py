@@ -615,9 +615,12 @@ df_teams    = build_team_stats(df_g_raw, team_id_map)
 
 # API-Football データ: 事前取得済みJSONをGitHubから読み込む
 # データ取得方法: fetch_api_stats.py を参照
-@st.cache_data(ttl=3600, show_spinner=False)
 def load_apf_json(season_str: str) -> dict:
-    """GitHubに保存済みのAPI統計JSONを読み込む（APIを叩かない）"""
+    """GitHubに保存済みのAPI統計JSONを読み込む。session_stateでキャッシュ。"""
+    cache_key = f"apf_json_{season_str}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
     try:
         repo_user = st.secrets.get("GITHUB_USER", "")
         repo_name = st.secrets.get("GITHUB_REPO", "")
@@ -625,12 +628,16 @@ def load_apf_json(season_str: str) -> dict:
         return {}
     if not repo_user or not repo_name:
         return {}
+
     url = (f"https://raw.githubusercontent.com/{repo_user}/{repo_name}"
            f"/main/api_stats_{season_str}.json")
     r = _get(url)
     if r:
         try:
-            return r.json()
+            data = r.json()
+            if data:
+                st.session_state[cache_key] = data
+            return data
         except Exception:
             return {}
     return {}
