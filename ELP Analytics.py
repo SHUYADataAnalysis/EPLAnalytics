@@ -1254,13 +1254,17 @@ else:
                          use_container_width=True)
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="background:#0f172a;color:#94a3b8;font-size:.72rem;
-     padding:.8rem 1.2rem;border-radius:8px;margin-top:2rem;text-align:center;
-     border-top:2px solid #1a5c36">
-  Data: <b style='color:#cbd5e1'>vaastav/Fantasy-Premier-League</b>
-  (github.com/vaastav/Fantasy-Premier-League) ·
-  FPL data © Premier League · Non-commercial personal use only<br>
-  Built with Streamlit · Python · NumPy · Pandas
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    "<div style='background:#0f172a !important;border-radius:8px;"
+    "padding:.8rem 1.2rem;margin-top:2rem;text-align:center;"
+    "border-top:2px solid #1a5c36'>"
+    "<span style='color:#e2e8f0 !important;font-size:.72rem'>"
+    "<b>Data: vaastav/Fantasy-Premier-League</b>"
+    " (github.com/vaastav/Fantasy-Premier-League)"
+    " · FPL data © Premier League · Non-commercial personal use only"
+    "</span><br>"
+    "<span style='color:#64748b !important;font-size:.68rem'>"
+    "Built with Streamlit · Python · NumPy · Pandas"
+    "</span></div>",
+    unsafe_allow_html=True
+)
