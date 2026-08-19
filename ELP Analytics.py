@@ -61,6 +61,13 @@ input,textarea{color:#1a1a2e !important;background:#fff !important;}
 [data-baseweb="popover"] *,[data-baseweb="menu"] *{color:#1a1a2e !important;background:#fff !important;}
 [data-baseweb="option"]{color:#1a1a2e !important;background:#fff !important;}
 [data-baseweb="tag"] *{color:#fff !important;}
+/* Streamlit selectbox 選択値テキスト */
+[data-testid="stSelectbox"] *{color:#1a1a2e !important;}
+[data-testid="stMultiSelect"] *{color:#1a1a2e !important;}
+[data-testid="stSelectbox"] [data-baseweb="tag"] span{color:#fff !important;}
+.stSelectbox [class^="css"],[class*=" css"]{color:#1a1a2e !important;}
+div[data-baseweb="select"] > div{color:#1a1a2e !important;background:#fff !important;}
+div[data-baseweb="select"] > div > div{color:#1a1a2e !important;}
 .stTabs [data-baseweb="tab"]{background:#e8f0eb;color:#1a1a2e !important;font-weight:600;}
 .stTabs [aria-selected="true"]{background:#1a5c36 !important;}
 .stTabs [aria-selected="true"] *{color:#fff !important;}
@@ -322,6 +329,7 @@ NUM_COLS_PLAYER = [
 ]
 
 NUM_COLS_GW = [
+    "tackles","recoveries","clearances_blocks_interceptions","defensive_contribution",
     "goals_scored","assists","expected_goals","expected_assists",
     "expected_goal_involvements","expected_goals_conceded","goals_conceded",
     "saves","clean_sheets","yellow_cards","red_cards","bonus","minutes",
@@ -371,22 +379,30 @@ def build_team_stats(dg_raw, team_id_map):
         matches=("round","nunique"),
     ).reset_index()
 
-    # 攻撃指標（全選手集計）
-    atk = dg.groupby("team").agg(
-        xG=("expected_goals","sum"),
-        xA=("expected_assists","sum"),
-        creativity=("creativity","sum"),
-        threat=("threat","sum"),
-        influence=("influence","sum"),
-        yellow_cards=("yellow_cards","sum"),
-        red_cards=("red_cards","sum"),
-        bonus=("bonus","sum"),
-        assists=("assists","sum"),
-        tackles=("tackles","sum"),
-        recoveries=("recoveries","sum"),
-        cbi=("clearances_blocks_interceptions","sum"),
-        def_contribution=("defensive_contribution","sum"),
-    ).reset_index()
+    # 攻撃指標（全選手集計）— 旧シーズンに存在しない列は0で補完
+    _ALWAYS_COLS = {
+        "expected_goals": "xG",
+        "expected_assists": "xA",
+        "creativity": "creativity",
+        "threat": "threat",
+        "influence": "influence",
+        "yellow_cards": "yellow_cards",
+        "red_cards": "red_cards",
+        "bonus": "bonus",
+        "assists": "assists",
+    }
+    _NEW_COLS = {   # 2025-26から追加。旧シーズンは0埋め
+        "tackles": "tackles",
+        "recoveries": "recoveries",
+        "clearances_blocks_interceptions": "cbi",
+        "defensive_contribution": "def_contribution",
+    }
+    # 存在しない列を0で補完してから集計
+    for col in list(_ALWAYS_COLS.keys()) + list(_NEW_COLS.keys()):
+        if col not in dg.columns:
+            dg[col] = 0.0
+    atk_spec = {v: (k, "sum") for k, v in {**_ALWAYS_COLS, **_NEW_COLS}.items()}
+    atk = dg.groupby("team").agg(**atk_spec).reset_index()
 
     # GKからCS・xGC・Saves
     gk = dg[dg["position"]=="GK"].copy()
@@ -570,27 +586,10 @@ st.sidebar.markdown(f"""
 season = st.sidebar.selectbox("Season", ["2025-26","2024-25","2023-24","2022-23"])
 page   = st.sidebar.radio("", ["🏟️ Team Analysis","👤 Player Analysis"], label_visibility="collapsed")
 st.sidebar.markdown("---")
-# APIキーは st.secrets から読む（公開アプリ用・入力欄なし）
-_raw_key = ""
-try:
-    _raw_key = st.secrets.get("APIFOOTBALL_KEY", "")
-except Exception:
-    pass
-api_key_input = _raw_key.strip()
-apf_enabled   = bool(api_key_input)
-apf_remain    = 0   # デフォルト値
-
-st.sidebar.markdown("**⚡ API-Football**")
-if apf_enabled:
-    apf_valid, apf_used, apf_remain = check_apf_key(api_key_input)
-    if apf_valid:
-        st.sidebar.success(f"✅ 接続済み  残: {apf_remain}req/日")
-    else:
-        st.sidebar.error("❌ APIキー無効")
-        apf_enabled = False
-        apf_remain  = 0
-else:
-    st.sidebar.caption("⚡指標: Streamlit Secrets に APIFOOTBALL_KEY を設定してください")
+# API-Football データは事前取得済みJSONから読む
+api_key_input = ""
+apf_enabled   = False
+apf_remain    = 0
 st.sidebar.markdown("---")
 
 # ── Load ──────────────────────────────────────────────────────────────────────
@@ -614,51 +613,34 @@ if df_t_raw is not None and "id" in df_t_raw.columns and "name" in df_t_raw.colu
 df_players  = prep_players(df_p_raw, team_id_map)
 df_teams    = build_team_stats(df_g_raw, team_id_map)
 
-# API-Football データの取得・マージ
-if apf_enabled:
-    import json as _j
-    fixture_ids = fetch_finished_fixture_ids(season, api_key_input)
-    n_total     = len(fixture_ids)
-    cached_dict = _load_apf_cache()
-    n_cached = len([k for k in cached_dict if str(k) in [str(f) for f in fixture_ids]])
+# API-Football データ: 事前取得済みJSONをGitHubから読み込む
+# データ取得方法: fetch_api_stats.py を参照
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_apf_json(season_str: str) -> dict:
+    """GitHubに保存済みのAPI統計JSONを読み込む（APIを叩かない）"""
+    try:
+        repo_user = st.secrets.get("GITHUB_USER", "")
+        repo_name = st.secrets.get("GITHUB_REPO", "")
+    except Exception:
+        return {}
+    if not repo_user or not repo_name:
+        return {}
+    url = (f"https://raw.githubusercontent.com/{repo_user}/{repo_name}"
+           f"/main/api_stats_{season_str}.json")
+    r = _get(url)
+    if r:
+        try:
+            return r.json()
+        except Exception:
+            return {}
+    return {}
 
-    # 取得状況をサイドバーに表示
-    if n_total == 0:
-        _last_err = st.session_state.get("apf_last_error", "詳細不明")
-        st.sidebar.warning("⚠️ 試合IDを取得できません")
-        st.sidebar.caption(f"Error: {_last_err}")
-        st.sidebar.caption(f"season={season} → APF:{SEASON_TO_APF.get(season)}, league={EPL_LEAGUE}")
-    else:
-        st.sidebar.markdown(f"⚡ **{n_cached}/{n_total}試合 取得済み**",
-                            unsafe_allow_html=True)
-
-    # 手動取得ボタン
-    fetch_col1, fetch_col2 = st.sidebar.columns([2,1])
-    fetch_n = fetch_col1.number_input("取得数", 10, 95, 80, 10, key="fetch_n",
-                                       label_visibility="collapsed")
-    do_fetch = fetch_col2.button("📡 取得", key="do_fetch",
-                                  help=f"未取得の試合を最大{int(fetch_n)}件取得します")
-
-    # キャッシュクリアボタン（試合ID再取得用）
-    if st.sidebar.button("🔄 試合ID再取得", key="clear_fid",
-                          help="キャッシュをクリアして試合IDを再取得します"):
-        # session_state の fixture_ids キャッシュをクリア
-        for k in list(st.session_state.keys()):
-            if k.startswith("fixture_ids_"):
-                del st.session_state[k]
-        st.rerun()
-
-    if do_fetch and n_total > 0 and apf_remain > 3:
-        fixture_cache = fetch_and_cache_stats(
-            fixture_ids, api_key_input,
-            max_per_run=min(int(fetch_n), apf_remain - 2)
-        )
-    else:
-        fixture_cache = {int(k): v for k, v in cached_dict.items()
-                         if int(k) in fixture_ids}
-
-    if fixture_cache:
-        df_teams = build_apf_team_stats(fixture_cache, df_teams)
+_apf_json = load_apf_json(season)
+if _apf_json:
+    df_teams = build_apf_team_stats(_apf_json, df_teams)
+    st.sidebar.success(f"⚡ {len(_apf_json)}試合分スタッツ読込済")
+else:
+    st.sidebar.caption("⚡ APIスタッツ未設定 (fetch_api_stats.pyで取得→GitHubにコミット)")
 
 tcmap       = team_color_map(df_teams["team_name"].tolist())
 
