@@ -77,6 +77,20 @@ div[data-baseweb="select"] > div > div{color:#1a1a2e !important;}
 [data-testid="stSuccess"] *{color:#166534 !important;}
 [data-testid="stError"] *{color:#991b1b !important;}
 [data-testid="stWarning"] *{color:#92400e !important;}
+/* スマホ: サイドバー開閉ボタンを目立たせる */
+[data-testid="collapsedControl"]{
+  background:#1a5c36 !important;
+  border-radius:0 8px 8px 0 !important;
+  padding:8px !important;
+  box-shadow:2px 0 8px rgba(0,0,0,0.4) !important;
+}
+[data-testid="collapsedControl"] svg{
+  fill:#ffffff !important;
+  stroke:#ffffff !important;
+}
+[data-testid="collapsedControl"]:hover{
+  background:#27834e !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -242,10 +256,33 @@ def fetch_and_cache_stats(
     return {int(k): v for k, v in cached.items() if int(k) in fixture_ids}
 
 
+# API-Football → vaastav チーム名マッピング
+APF_TEAM_NAME_MAP = {
+    "Manchester City":         "Man City",
+    "Manchester United":       "Man Utd",
+    "Nottingham Forest":       "Nott'm Forest",
+    "Newcastle United":        "Newcastle",
+    "Brighton & Hove Albion":  "Brighton",
+    "West Ham United":         "West Ham",
+    "Wolverhampton Wanderers": "Wolves",
+    "Tottenham Hotspur":       "Spurs",
+    "Leicester City":          "Leicester",
+    "Ipswich Town":            "Ipswich",
+    "Sheffield United":        "Sheffield Utd",
+    "Luton Town":              "Luton",
+    "Burnley":                 "Burnley",
+}
+
+def _normalize_team_name(name: str) -> str:
+    """API-Footballのチーム名をvaastav形式に変換"""
+    return APF_TEAM_NAME_MAP.get(name, name)
+
+
 def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.DataFrame":
     """
     fixture_cache からチームごとにシュート・ポゼッション等を集計し
     df_teams に列として追加する。
+    チーム名はAPI-Football→vaastav形式に正規化してマッチング。
     """
     rows = []
     for fid, sides in fixture_cache.items():
@@ -254,7 +291,7 @@ def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.D
             if not s or not s.get("team_name"):
                 continue
             rows.append({
-                "team_name":        s["team_name"],
+                "team_name":        _normalize_team_name(s["team_name"]),
                 "total_shots":      s.get("Total Shots"),
                 "shots_on_target":  s.get("Shots on Goal"),
                 "shots_inside_box": s.get("Shots insidebox"),
