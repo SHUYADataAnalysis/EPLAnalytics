@@ -319,15 +319,15 @@ def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.D
     ).round(1)
     return merged
 
-def _get(url, timeout=20):
-    for _ in range(3):
+def _get(url, timeout=30):
+    for attempt in range(5):
         try:
             r = requests.get(url, headers={"User-Agent":"Mozilla/5.0 Chrome/124"}, timeout=timeout)
             if r.status_code == 200:
                 return r
         except Exception:
             pass
-        time.sleep(2)
+        time.sleep(2 * (attempt + 1))  # 指数バックオフ: 2, 4, 6, 8, 10秒
     return None
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -632,12 +632,15 @@ with st.spinner("Loading data..."):
 
 if df_p_raw is None or df_g_raw is None:
     st.error(f"""
-**データ取得失敗** — 以下のURLをブラウザで開き、手動ダウンロードしてください:
-```
-{VAASTAV}/{season}/players_raw.csv  →  players_raw.csv として保存
-{VAASTAV}/{season}/gws/merged_gw.csv  →  merged_gw.csv として保存
-```
+**データ取得に失敗しました**
+
+まず **ページをリロード（再読み込み）** してください。
+GitHub へのアクセスが一時的に失敗することがあります。
+
+▶ それでも失敗する場合は、シーズンを別のものに切り替えてみてください。  
+▶ 左上の **>>** をタップするとシーズン選択が開きます。
 """)
+    st.info("💡 スマホの場合: 画面左上の **>>** をタップするとメニューが開きます")
     st.stop()
 
 team_id_map = {}
@@ -706,21 +709,26 @@ st.markdown(
     unsafe_allow_html=True
 )
 st.markdown("<div style='height:4px;background:linear-gradient(90deg,#1a5c36,#c45c00,#0077aa,transparent);border-radius:2px;margin-bottom:.5rem'></div>", unsafe_allow_html=True)
-# スマホ向け案内（画面幅が狭い時だけ表示）
+# スマホ向け案内（CSSメディアクエリで制御）
 st.markdown("""
-<div style="display:none" id="mobile-hint">
-  <div style="background:#1e2d3d;color:#e2e8f0;font-size:.8rem;
-       padding:.5rem .8rem;border-radius:6px;margin-bottom:.5rem;
-       border-left:3px solid #1a5c36">
-    ☰ 左上の <b>&gt;&gt;</b> をタップするとシーズン選択・設定が開きます
-  </div>
-</div>
-<script>
-  // 画面幅480px以下（スマホ）のみ表示
-  if(window.innerWidth <= 480){
-    document.getElementById('mobile-hint').style.display='block';
+<style>
+.mobile-hint{display:none}
+@media(max-width:640px){
+  .mobile-hint{
+    display:block;
+    background:#1e2d3d;
+    color:#e2e8f0 !important;
+    font-size:.82rem;
+    padding:.5rem .9rem;
+    border-radius:6px;
+    margin-bottom:.5rem;
+    border-left:3px solid #1a5c36;
   }
-</script>
+}
+</style>
+<div class="mobile-hint">
+  ☰ 左上の <b>&gt;&gt;</b> をタップするとシーズン選択・設定が開きます
+</div>
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
