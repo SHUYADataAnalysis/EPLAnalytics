@@ -45,7 +45,8 @@ C = dict(
 )
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="EPL Analytics", layout="wide", page_icon="⚽")
+st.set_page_config(page_title="EPL Analytics", layout="wide", page_icon="⚽",
+                   initial_sidebar_state="expanded")
 st.markdown("""
 <style>
 html,body,[data-testid="stAppViewContainer"],[data-testid="stAppViewContainer"]>.main,.main .block-container{background:#f5f7fa !important;}
