@@ -77,19 +77,38 @@ div[data-baseweb="select"] > div > div{color:#1a1a2e !important;}
 [data-testid="stSuccess"] *{color:#166534 !important;}
 [data-testid="stError"] *{color:#991b1b !important;}
 [data-testid="stWarning"] *{color:#92400e !important;}
-/* スマホ: サイドバー開閉ボタンを目立たせる */
-[data-testid="collapsedControl"]{
+/* スマホ: サイドバー開閉ボタン（>> ）を緑色で目立たせる */
+/* 複数のStreamlitバージョンに対応するため全セレクタを列挙 */
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"],
+button[aria-label="Open sidebar"],
+button[aria-expanded="false"][data-testid*="sidebar"],
+button[data-testid*="Collapse"],
+button[data-testid*="sidebar"]{
   background:#1a5c36 !important;
   border-radius:0 8px 8px 0 !important;
-  padding:8px !important;
-  box-shadow:2px 0 8px rgba(0,0,0,0.4) !important;
+  border:2px solid #00cc44 !important;
+  padding:10px 8px !important;
+  box-shadow:3px 0 12px rgba(0,180,80,0.5) !important;
+  position:fixed !important;
+  top:0.5rem !important;
+  left:0 !important;
+  z-index:9999 !important;
+  min-width:2.5rem !important;
+  min-height:2.5rem !important;
 }
-[data-testid="collapsedControl"] svg{
+[data-testid="collapsedControl"] svg,
+[data-testid="stSidebarCollapsedControl"] svg,
+button[aria-label="Open sidebar"] svg{
   fill:#ffffff !important;
   stroke:#ffffff !important;
+  width:1.2rem !important;
+  height:1.2rem !important;
 }
-[data-testid="collapsedControl"]:hover{
+[data-testid="collapsedControl"]:hover,
+[data-testid="stSidebarCollapsedControl"]:hover{
   background:#27834e !important;
+  box-shadow:3px 0 16px rgba(0,200,80,0.7) !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -620,7 +639,16 @@ st.sidebar.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-season = st.sidebar.selectbox("Season", ["2025-26","2024-25","2023-24","2022-23"])
+# 現在の日付から利用可能なシーズンを動的に生成
+# EPLは8月開幕のため、8月以降は新シーズンを追加
+import datetime as _dt
+_now   = _dt.datetime.now()
+_year  = _now.year
+# 8月以降なら今年開幕のシーズンを最新に追加
+_start = _year if _now.month >= 8 else _year - 1
+# 2022-23から現在シーズンまでを生成（最大5シーズン）
+_seasons = [f"{y}-{str(y+1)[-2:]}" for y in range(_start, _start-5, -1)]
+season = st.sidebar.selectbox("Season", _seasons)
 page   = st.sidebar.radio("", ["🏟️ Team Analysis","👤 Player Analysis"], label_visibility="collapsed")
 st.sidebar.markdown("---")
 # API-Football データは事前取得済みJSONから読む
