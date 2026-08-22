@@ -69,7 +69,7 @@ input,textarea{color:#1a1a2e !important;background:#fff !important;}
 div[data-baseweb="select"] > div{color:#1a1a2e !important;background:#fff !important;}
 div[data-baseweb="select"] > div > div{color:#1a1a2e !important;}
 .stTabs [data-baseweb="tab"]{background:#e8f0eb;color:#1a1a2e !important;font-weight:600;}
-.stTabs [aria-selected="true"]{background:#1a5c36 !important;}
+.stTabs [aria-selected="true"]{background:#1e3a5f !important;}
 .stTabs [aria-selected="true"] *{color:#fff !important;}
 .section-bar{height:4px;background:linear-gradient(90deg,#1a5c36,#c45c00,#0077aa,transparent);margin:.5rem 0 1rem;border-radius:2px;}
 [data-testid="stDataFrame"],[data-testid="stDataFrame"] *{color:#1a1a2e !important;}
@@ -77,39 +77,7 @@ div[data-baseweb="select"] > div > div{color:#1a1a2e !important;}
 [data-testid="stSuccess"] *{color:#166534 !important;}
 [data-testid="stError"] *{color:#991b1b !important;}
 [data-testid="stWarning"] *{color:#92400e !important;}
-/* スマホ: サイドバー開閉ボタン（>> ）を緑色で目立たせる */
-/* 複数のStreamlitバージョンに対応するため全セレクタを列挙 */
-[data-testid="collapsedControl"],
-[data-testid="stSidebarCollapsedControl"],
-button[aria-label="Open sidebar"],
-button[aria-expanded="false"][data-testid*="sidebar"],
-button[data-testid*="Collapse"],
-button[data-testid*="sidebar"]{
-  background:#1a5c36 !important;
-  border-radius:0 8px 8px 0 !important;
-  border:2px solid #00cc44 !important;
-  padding:10px 8px !important;
-  box-shadow:3px 0 12px rgba(0,180,80,0.5) !important;
-  position:fixed !important;
-  top:0.5rem !important;
-  left:0 !important;
-  z-index:9999 !important;
-  min-width:2.5rem !important;
-  min-height:2.5rem !important;
-}
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg,
-button[aria-label="Open sidebar"] svg{
-  fill:#ffffff !important;
-  stroke:#ffffff !important;
-  width:1.2rem !important;
-  height:1.2rem !important;
-}
-[data-testid="collapsedControl"]:hover,
-[data-testid="stSidebarCollapsedControl"]:hover{
-  background:#27834e !important;
-  box-shadow:3px 0 16px rgba(0,200,80,0.7) !important;
-}
+/* sidebar toggle: controlled by Streamlit native UI */
 </style>
 """, unsafe_allow_html=True)
 
@@ -736,7 +704,23 @@ st.markdown(
     f'<img src="data:image/svg+xml;base64,{_svg_b64}" style="width:100%;display:block">',
     unsafe_allow_html=True
 )
-st.markdown("<div style='height:4px;background:linear-gradient(90deg,#1a5c36,#c45c00,#0077aa,transparent);border-radius:2px;margin-bottom:1rem'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:4px;background:linear-gradient(90deg,#1a5c36,#c45c00,#0077aa,transparent);border-radius:2px;margin-bottom:.5rem'></div>", unsafe_allow_html=True)
+# スマホ向け案内（画面幅が狭い時だけ表示）
+st.markdown("""
+<div style="display:none" id="mobile-hint">
+  <div style="background:#1e2d3d;color:#e2e8f0;font-size:.8rem;
+       padding:.5rem .8rem;border-radius:6px;margin-bottom:.5rem;
+       border-left:3px solid #1a5c36">
+    ☰ 左上の <b>&gt;&gt;</b> をタップするとシーズン選択・設定が開きます
+  </div>
+</div>
+<script>
+  // 画面幅480px以下（スマホ）のみ表示
+  if(window.innerWidth <= 480){
+    document.getElementById('mobile-hint').style.display='block';
+  }
+</script>
+""", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TEAM ANALYSIS
