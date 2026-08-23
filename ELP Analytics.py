@@ -1208,19 +1208,31 @@ else:
         col_a, col_b = st.columns([1,2])
         with col_a:
             all_p = sorted(df_filt["player_name"].tolist())
-            sel_p = st.multiselect("Select Players (2–5)", all_p,
+            sel_p = st.multiselect("Select Players (2-5)", all_p,
                                     default=all_p[:3] if len(all_p) >= 3 else all_p)
-            sel_pm = st.multiselect("Metrics (3–7)", all_player_labels,
+            sel_pm = st.multiselect("Metrics (3-7)", all_player_labels,
                                      default=["xG p90","xA p90","Creativity",
                                               "Threat","Influence","Clean Sheets"])
+            compare_mode = st.radio(
+                "比較モード",
+                ["絶対評価", "相対評価"],
+                help="絶対評価: フィルタ後の全選手を母集団として比較。EPL全体での位置がわかる。"
+                     " / 相対評価: 選んだ選手だけを母集団として比較。"
+                     "アタッカー同士など似たレベルの選手間の細かな差を見たいときに使う。"
+            )
         with col_b:
             if len(sel_p) >= 2 and len(sel_pm) >= 3:
                 pm_cols = [PLAYER_METRICS[m][0] for m in sel_pm]
                 df_pr = df_filt[df_filt["player_name"].isin(sel_p)].set_index("player_name")
-                fig_pr = radar(df_pr, pm_cols, sel_pm, "Player Radar",
-                               z_pool=df_filt.set_index("player_name"))
+                if compare_mode == "相対評価":
+                    z_pool_pr  = df_pr
+                    caption_pr = "相対評価モード: 選んだ選手同士の中での相対的な位置。外側 = このグループ内での上位。"
+                else:
+                    z_pool_pr  = df_filt.set_index("player_name")
+                    caption_pr = "絶対評価モード: フィルタ後の全選手を母集団としたパーセンタイル。外側 = 全体での上位。"
+                fig_pr = radar(df_pr, pm_cols, sel_pm, "Player Radar", z_pool=z_pool_pr)
                 st.pyplot(fig_pr, use_container_width=True)
-                st.caption("Outer = higher percentile among all filtered players.")
+                st.caption(caption_pr)
             else:
                 st.info("Select at least 2 players and 3 metrics.")
 
