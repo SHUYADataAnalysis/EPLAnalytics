@@ -1542,7 +1542,11 @@ else:
 
                     # 全員が出場したGWを特定
                     _gw_col_u = "GW" if "GW" in df_g_raw.columns else "round"
-                    _participated = df_g_raw[df_g_raw["element"].isin(_ids)].copy()
+                    # minutes > 0 の行のみ（登録されていても欠場の場合を除外）
+                    _participated = df_g_raw[
+                        df_g_raw["element"].isin(_ids) &
+                        (pd.to_numeric(df_g_raw.get("minutes", 0), errors="coerce").fillna(0) > 0)
+                    ].copy()
                     _gw_counts = _participated.groupby(_gw_col_u)["element"].nunique()
                     _shared_gws = _gw_counts[_gw_counts >= len(_ids)].index.tolist()
 
@@ -1596,37 +1600,7 @@ else:
                         st.pyplot(fig_ur, use_container_width=True)
                         st.caption("相対評価: 比較ユニット内でのパーセンタイル")
 
-                    # ② グループ棒グラフ（指標別比較）
-                    st.markdown("**指標別比較（グループ棒グラフ）**")
-                    _n_metrics = len(metric_cols)
-                    _n_units_r = len(unit_results)
-                    _fig_height = max(4, _n_metrics * 0.8)
-                    fig_ub, ax_ub = plt.subplots(figsize=(8, _fig_height))
-                    apply_dark_style(fig_ub, ax_ub)
-
-                    import numpy as _np2
-                    _x = _np2.arange(_n_metrics)
-                    _bar_w = 0.8 / _n_units_r
-                    _colors_u = ["#48cae4","#f4a261","#22c55e","#a78bfa"]
-
-                    for _ui, _ud in enumerate(unit_results):
-                        _vals = [_ud.get(c, 0) for c in metric_cols]
-                        _offset = (_ui - _n_units_r/2 + 0.5) * _bar_w
-                        ax_ub.barh(_x + _offset, _vals, _bar_w * 0.9,
-                                   label=_ud["name"],
-                                   color=_colors_u[_ui % len(_colors_u)],
-                                   alpha=0.85)
-
-                    ax_ub.set_yticks(_x)
-                    ax_ub.set_yticklabels(metric_cols, fontsize=9, color="#e2e8f0")
-                    ax_ub.set_xlabel("値", color="#94a3b8")
-                    ax_ub.set_title("Unit Comparison by Metric", color="#e2e8f0", fontweight="bold")
-                    ax_ub.legend(facecolor="#1f2937", edgecolor="#374151",
-                                 labelcolor="#e2e8f0", fontsize=9)
-                    ax_ub.axvline(0, color="#374151", lw=0.7)
-                    plt.tight_layout()
-                    st.pyplot(fig_ub, use_container_width=True)
-                    st.caption(f"共出場GW数が少ない場合（目安: 5節未満）は統計的信頼性が下がります。")
+                    st.caption("共出場GW数が5節未満の場合は統計的信頼性が下がります。")
 
     with tab_custp:
         st.markdown("## 🔧 Build Your Own Player Metric")
