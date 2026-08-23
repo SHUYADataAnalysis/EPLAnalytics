@@ -1065,18 +1065,12 @@ else:
         "xG":             ("expected_goals",               "Expected goals",             "Attack"),
         "xA":             ("expected_assists",             "Expected assists",           "Attack"),
         "xGI":            ("expected_goal_involvements",   "xG + xA",                   "Attack"),
-        "xG p90":         ("xG_p90",                      "xG per 90 mins",             "Attack"),
-        "xA p90":         ("xA_p90",                      "xA per 90 mins",             "Attack"),
-        "xGI p90":        ("xGI_p90",                     "xGI per 90 mins",            "Attack"),
-        "Goals p90":      ("goals_p90",                   "Goals per 90 mins",          "Attack"),
-        "Assists p90":    ("assists_p90",                  "Assists per 90 mins",        "Attack"),
         "Threat":         ("threat",                       "FPL Threat score",                                  "FPL Threat score",           "Attack"),
         "Creativity":     ("creativity",                   "FPL Creativity score",                          "FPL Creativity score",       "Playmaking"),
         "Influence":      ("influence",                    "FPL Influence score",                            "FPL Influence score",        "Playmaking"),
         "ICT Index":      ("ict_index",                    "FPL ICT combined",           "Playmaking"),
         "xGC":            ("expected_goals_conceded",      "Expected goals conceded",    "Defense"),
         "Saves":          ("saves",                        "Total saves (GK)",           "Defense"),
-        "Saves p90":      ("saves_p90",                   "Saves per 90 (GK)",          "Defense"),
         "Clean Sheets":   ("clean_sheets",                 "Clean sheets",               "Defense"),
         "Goals Conceded": ("goals_conceded",               "Goals conceded while on",    "Defense"),
         "Goal Luck":      ("goal_luck",                    "Goals − xG",                 "Luck"),
@@ -1086,13 +1080,9 @@ else:
         "Yellow Cards":   ("yellow_cards",                 "Yellow cards",               "Discipline"),
         "Red Cards":      ("red_cards",                    "Red cards",                  "Discipline"),
         "Tackles":        ("tackles",                      "Tackles (2025-26+)",          "Defense"),
-        "Tackles p90":    ("tackles_p90",                  "Tackles per 90 mins",         "Defense"),
         "Recoveries":     ("recoveries",                   "Ball recoveries (2025-26+)",                    "Ball recoveries (2025-26+)",  "Defense"),
-        "Recoveries p90": ("recoveries_p90",               "Recoveries per 90 mins",                    "Recoveries per 90 mins",      "Defense"),
         "CBI":            ("clearances_blocks_interceptions","Clearances+Blocks+Interceptions","Defense"),
-        "CBI p90":        ("cbi_p90",                      "CBI per 90 mins",             "Defense"),
         "Def Contribution":("defensive_contribution",      "Defensive contribution score","Defense"),
-        "Def Contribution p90":("def_contribution_p90",   "Def contribution per 90",     "Defense"),
         "Bonus":          ("bonus",                        "FPL Bonus points",            "FPL"),
         "FPL Points":     ("total_points",                 "Total FPL points",            "FPL"),
         "Price (£M)":     ("price_m",                     "Current FPL price",           "FPL"),
@@ -1184,7 +1174,7 @@ else:
         col_a, col_b = st.columns([1,3])
         with col_a:
             rank_metric = st.selectbox("Rank by", all_player_labels,
-                                       index=all_player_labels.index("xGI p90"))
+                                       index=all_player_labels.index("xGI") if "xGI" in all_player_labels else 0)
             use_p90_top = st.toggle("per 90分に変換", value=False, key="top10_p90",
                                      help="選択した指標を90分あたりの値に変換して比較します")
             show_n = st.radio("Show", [10, 20, 30], horizontal=True)
@@ -1234,8 +1224,7 @@ else:
             sel_p = st.multiselect("Select Players (2-5)", all_p,
                                     default=all_p[:3] if len(all_p) >= 3 else all_p)
             sel_pm = st.multiselect("Metrics (3-7)", all_player_labels,
-                                     default=["xG p90","xA p90","Creativity",
-                                              "Threat","Influence","Clean Sheets"])
+                                     default=["xG","xA","Creativity","Threat","Influence","Clean Sheets"])
             use_p90_radar = st.toggle("per 90分に変換", value=False, key="radar_p90",
                                        help="選んだ指標を90分あたりに変換します（既にp90の指標はそのまま）")
             compare_mode = st.radio(
