@@ -376,6 +376,8 @@ def prep_players(df_raw, team_id_map):
         df[c] = pd.to_numeric(df[c] if c in df.columns
                               else pd.Series(0, index=df.index), errors="coerce").fillna(0)
     df["price_m"]      = df["now_cost"] / 10.0
+    # 「名前 (チーム)」形式の表示名を追加（同名選手識別用）
+    df["display_name"]  = df["player_name"] + " (" + df["team_name"] + ")"
     df["goal_luck"]    = df["goals_scored"] - df["expected_goals"]
     df["def_luck"]     = df["expected_goals_conceded"] - df["goals_conceded"]
     df["mins_p90"]     = (df["minutes"] / 90).clip(lower=0.1)
@@ -1273,7 +1275,7 @@ else:
         st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
         col_a, col_b = st.columns([1,2])
         with col_a:
-            all_p = sorted(df_filt["player_name"].tolist())
+            all_p = sorted(df_filt["display_name"].tolist())
             sel_p = st.multiselect("Select Players (2-5)", all_p,
                                     default=all_p[:3] if len(all_p) >= 3 else all_p)
             sel_pm = st.multiselect("Metrics (3-7)", all_player_labels,
@@ -1304,7 +1306,7 @@ else:
                     else:
                         pm_cols.append(raw_col)
                         sel_pm_disp.append(m)
-                df_pr = df_filt[df_filt["player_name"].isin(sel_p)].set_index("player_name")
+                df_pr = df_filt[df_filt["display_name"].isin(sel_p)].set_index("display_name")
                 if compare_mode == "相対評価":
                     z_pool_pr  = df_pr
                     caption_pr = "相対評価モード: 選んだ選手同士の中での相対的な位置。外側 = このグループ内での上位。"
@@ -1396,6 +1398,8 @@ else:
         pca_pos = st.multiselect("Position filter for PCA", ["GK","DEF","MID","FWD"],
                                   default=["MID"])
         df_pca_p = df_filt[df_filt["position"].isin(pca_pos)].copy()
+        # PCAの選手名表示はチーム名なしで簡潔に
+        df_pca_p["_plot_name"] = df_pca_p["player_name"]
 
         use_p90_pca = st.toggle("per 90分に変換", value=True, key="pca_p90",
                                      help="指標を90分あたりに変換して比較します")
@@ -1437,7 +1441,7 @@ else:
             ax_pp.axhline(0, color="#374151", ls="--", lw=.7)
             ax_pp.axvline(0, color="#374151", ls="--", lw=.7)
             for _, row in df_pca_p.iterrows():
-                ax_pp.annotate(row["player_name"][:12],
+                ax_pp.annotate(row.get("_plot_name", row["player_name"])[:12],
                                (row["PC1"], row["PC2"]),
                                xytext=(3,3), textcoords="offset points",
                                fontsize=6.5, color=C["chalk"], alpha=.8)
@@ -1501,7 +1505,7 @@ else:
                 _uname = st.text_input("ユニット名", value=f"Unit {_u+1}", key=f"uname_{_u}")
                 _uplayers = st.multiselect(
                     "選手を選択（2〜5人）",
-                    sorted(df_filt["player_name"].tolist()),
+                    sorted(df_filt["display_name"].tolist()),
                     key=f"uplayers_{_u}"
                 )
                 unit_defs.append({"name": _uname, "players": _uplayers})
@@ -1531,14 +1535,14 @@ else:
                         valid = False
                         break
 
-                    # 選手名→element IDをマッピング
-                    _id_map = df_players[["player_name","id"]].drop_duplicates() if "id" in df_players.columns else None
-                    if _id_map is None:
+                    # display_name → id マッピング（チーム名付きで一意に特定）
+                    if "id" not in df_players.columns or "display_name" not in df_players.columns:
                         st.warning("選手IDが取得できません")
                         valid = False
                         break
 
-                    _ids = _id_map[_id_map["player_name"].isin(_ud["players"])]["id"].tolist()
+                    _id_map = df_players[["display_name","id"]].drop_duplicates()
+                    _ids = _id_map[_id_map["display_name"].isin(_ud["players"])]["id"].tolist()
 
                     # 全員が出場したGWを特定
                     _gw_col_u = "GW" if "GW" in df_g_raw.columns else "round"
@@ -1560,7 +1564,7 @@ else:
                     _total_min = _shared_data.groupby("element")["minutes"].sum().sum()
 
                     row = {"ユニット": _ud["name"],
-                           "選手": ", ".join(_ud["players"]),
+                           "選手": ", ".join([p.split(" (")[0] for p in _ud["players"]]),  # チーム名を除いた表示
                            "共出場GW": len(_shared_gws),
                            "総出場分": int(_total_min)}
 
