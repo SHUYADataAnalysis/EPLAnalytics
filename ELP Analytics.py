@@ -381,6 +381,11 @@ def prep_players(df_raw, team_id_map):
     df["goals_p90"]    = df["goals_scored"] / df["mins_p90"]
     df["assists_p90"]  = df["assists"] / df["mins_p90"]
     df["saves_p90"]    = df["saves"] / df["mins_p90"]
+    # 追加p90列（切り替え機能用）
+    for _c in ["influence","creativity","threat","ict_index",
+               "clean_sheets","goals_conceded","yellow_cards","red_cards",
+               "bonus","total_points"]:
+        df[f"{_c}_p90"] = df[_c] / df["mins_p90"]
     # 守備指標（2025-26から追加。旧シーズン/他ポジは0）
     for _col, _p90col in [
         ("tackles",                        "tackles_p90"),
@@ -493,6 +498,22 @@ def team_color_map(teams):
     return {t: PITCH_COLORS[i % len(PITCH_COLORS)] for i, t in enumerate(sorted(teams))}
 
 # ── Chart helpers ─────────────────────────────────────────────────────────────
+def to_p90(col: str, df, mins_col: str = "mins_p90") -> tuple[str, str]:
+    """
+    列名を p90 版に変換する。
+    既存の _p90 列があればそれを返す。なければその場で計算して返す。
+    Returns: (p90_column_name, display_label)
+    """
+    p90_col = f"{col}_p90"
+    if p90_col not in df.columns:
+        if mins_col in df.columns and col in df.columns:
+            df[p90_col] = df[col] / df[mins_col].clip(lower=0.1)
+        else:
+            return col, col  # fallback
+    label = col.replace("_", " ").title() + " p90"
+    return p90_col, label
+
+
 def radar(df_sel, metrics, labels, title, z_pool=None):
     """Dark-themed percentile radar chart"""
     if z_pool is None:
@@ -1164,6 +1185,8 @@ else:
         with col_a:
             rank_metric = st.selectbox("Rank by", all_player_labels,
                                        index=all_player_labels.index("xGI p90"))
+            use_p90_top = st.toggle("per 90分に変換", value=False, key="top10_p90",
+                                     help="選択した指標を90分あたりの値に変換して比較します")
             show_n = st.radio("Show", [10, 20, 30], horizontal=True)
         with col_b:
             col_r = PLAYER_METRICS[rank_metric][0]
@@ -1213,6 +1236,8 @@ else:
             sel_pm = st.multiselect("Metrics (3-7)", all_player_labels,
                                      default=["xG p90","xA p90","Creativity",
                                               "Threat","Influence","Clean Sheets"])
+            use_p90_radar = st.toggle("per 90分に変換", value=False, key="radar_p90",
+                                       help="選んだ指標を90分あたりに変換します（既にp90の指標はそのまま）")
             compare_mode = st.radio(
                 "比較モード",
                 ["絶対評価", "相対評価"],
@@ -1222,7 +1247,21 @@ else:
             )
         with col_b:
             if len(sel_p) >= 2 and len(sel_pm) >= 3:
-                pm_cols = [PLAYER_METRICS[m][0] for m in sel_pm]
+                # p90変換（トグルONかつ既にp90でない指標のみ）
+                _p90_skip = {"price_m","goal_luck","def_luck","minutes","starts",
+                             "xG_p90","xA_p90","xGI_p90","goals_p90","assists_p90",
+                             "saves_p90","tackles_p90","recoveries_p90","cbi_p90","def_contribution_p90"}
+                pm_cols = []
+                sel_pm_disp = []
+                for m in sel_pm:
+                    raw_col = PLAYER_METRICS[m][0]
+                    if use_p90_radar and raw_col not in _p90_skip and not raw_col.endswith("_p90"):
+                        p90c, _ = to_p90(raw_col, df_filt)
+                        pm_cols.append(p90c)
+                        sel_pm_disp.append(m + " p90" if not m.endswith("p90") else m)
+                    else:
+                        pm_cols.append(raw_col)
+                        sel_pm_disp.append(m)
                 df_pr = df_filt[df_filt["player_name"].isin(sel_p)].set_index("player_name")
                 if compare_mode == "相対評価":
                     z_pool_pr  = df_pr
@@ -1230,7 +1269,7 @@ else:
                 else:
                     z_pool_pr  = df_filt.set_index("player_name")
                     caption_pr = "絶対評価モード: フィルタ後の全選手を母集団としたパーセンタイル。外側 = 全体での上位。"
-                fig_pr = radar(df_pr, pm_cols, sel_pm, "Player Radar", z_pool=z_pool_pr)
+                fig_pr = radar(df_pr, pm_cols, sel_pm_disp, "Player Radar", z_pool=z_pool_pr)
                 st.pyplot(fig_pr, use_container_width=True)
                 st.caption(caption_pr)
             else:
