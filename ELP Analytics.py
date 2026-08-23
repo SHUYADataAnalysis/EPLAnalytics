@@ -381,7 +381,16 @@ def prep_players(df_raw, team_id_map):
     df["goals_p90"]    = df["goals_scored"] / df["mins_p90"]
     df["assists_p90"]  = df["assists"] / df["mins_p90"]
     df["saves_p90"]    = df["saves"] / df["mins_p90"]
-    # 守備指標のp90計算はcompute()内で実施（mins_p90依存のため）
+    # 守備指標（2025-26から追加。旧シーズン/他ポジは0）
+    for _col, _p90col in [
+        ("tackles",                        "tackles_p90"),
+        ("recoveries",                     "recoveries_p90"),
+        ("clearances_blocks_interceptions","cbi_p90"),
+        ("defensive_contribution",         "def_contribution_p90"),
+    ]:
+        _series = df[_col] if _col in df.columns else pd.Series(0.0, index=df.index)
+        df[_col]    = pd.to_numeric(_series, errors="coerce").fillna(0)
+        df[_p90col] = df[_col] / df["mins_p90"]
     return df
 
 def build_team_stats(dg_raw, team_id_map):
@@ -493,9 +502,17 @@ def radar(df_sel, metrics, labels, title, z_pool=None):
     df_pct = df_sel[metrics].copy()
     for col in metrics:
         pv = pool[col].dropna()
-        df_pct[col] = df_pct[col].apply(
-            lambda v: float((pv <= v).mean()) if len(pv) else 0.5
-        )
+        if len(pv) == 0:
+            df_pct[col] = 0.5
+            continue
+        pv_max = pv.max()
+        def _pct(v):
+            # 値が0かつプール最大値も0（全員0）→ 0%として扱う
+            if v == 0 and pv_max == 0:
+                return 0.0
+            # 値が0で他に非ゼロがある → 下位（パーセンタイル0に近い）
+            return float((pv <= v).mean())
+        df_pct[col] = df_pct[col].apply(_pct)
     n      = len(labels)
     angles = np.linspace(0, 2*np.pi, n, endpoint=False).tolist()
     angles += angles[:1]
@@ -1028,9 +1045,9 @@ else:
         "xGI p90":        ("xGI_p90",                     "xGI per 90 mins",            "Attack"),
         "Goals p90":      ("goals_p90",                   "Goals per 90 mins",          "Attack"),
         "Assists p90":    ("assists_p90",                  "Assists per 90 mins",        "Attack"),
-        "Threat":         ("threat",                       "FPL Threat score",           "Attack"),
-        "Creativity":     ("creativity",                   "FPL Creativity score",       "Playmaking"),
-        "Influence":      ("influence",                    "FPL Influence score",        "Playmaking"),
+        "Threat":         ("threat",                       "ゴール脅威スコア。シュート数・位置・PA内行動から算出（高いほど得点力あり）",                       "FPL Threat score",           "Attack"),
+        "Creativity":     ("creativity",                   "チャンスメイク指標。キーパス・クロス・スルーパスの量と質を評価",                   "FPL Creativity score",       "Playmaking"),
+        "Influence":      ("influence",                    "試合全体への関与度。ボールタッチ・デュエル・守備行動を包括的に評価",                    "FPL Influence score",        "Playmaking"),
         "ICT Index":      ("ict_index",                    "FPL ICT combined",           "Playmaking"),
         "xGC":            ("expected_goals_conceded",      "Expected goals conceded",    "Defense"),
         "Saves":          ("saves",                        "Total saves (GK)",           "Defense"),
@@ -1045,12 +1062,12 @@ else:
         "Red Cards":      ("red_cards",                    "Red cards",                  "Discipline"),
         "Tackles":        ("tackles",                      "Tackles (2025-26+)",          "Defense"),
         "Tackles p90":    ("tackles_p90",                  "Tackles per 90 mins",         "Defense"),
-        "Recoveries":     ("recoveries",                   "Ball recoveries (2025-26+)",  "Defense"),
-        "Recoveries p90": ("recoveries_p90",               "Recoveries per 90 mins",      "Defense"),
+        "Recoveries":     ("recoveries",                   "ルーズボール・こぼれ球の回収数。デュエル後の球際回収やクリアの拾い直しをカウント（2025-26+）",                   "Ball recoveries (2025-26+)",  "Defense"),
+        "Recoveries p90": ("recoveries_p90",               "ルーズボール回収 per 90分（2025-26+）",               "Recoveries per 90 mins",      "Defense"),
         "CBI":            ("clearances_blocks_interceptions","Clearances+Blocks+Interceptions","Defense"),
         "CBI p90":        ("cbi_p90",                      "CBI per 90 mins",             "Defense"),
-        "Def Contribution":("defensive_contribution",      "Defensive contribution score","Defense"),
-        "Def Contribution p90":("def_contribution_p90",   "Def contribution per 90",     "Defense"),
+        "Def Contribution":("defensive_contribution",      "FPL独自の守備貢献スコア。タックル・クリア・インターセプト等を総合評価（2025-26+）",      "Defensive contribution score","Defense"),
+        "Def Contribution p90":("def_contribution_p90",   "守備貢献スコア per 90分（2025-26+）",   "Def contribution per 90",     "Defense"),
         "Bonus":          ("bonus",                        "FPL Bonus points",            "FPL"),
         "FPL Points":     ("total_points",                 "Total FPL points",            "FPL"),
         "Price (£M)":     ("price_m",                     "Current FPL price",           "FPL"),
@@ -1074,10 +1091,11 @@ else:
                         f"Filtered players: <b style='color:{C['amber']}'>{len(df_filt)}</b></div>",
                         unsafe_allow_html=True)
 
-    tab_avail, tab_top10, tab_prad, tab_pcap, tab_custp = st.tabs([
+    tab_avail, tab_top10, tab_prad, tab_scatter2, tab_pcap, tab_custp = st.tabs([
         "📋 Available Metrics",
         "🏆 Top 10 Rankings",
         "🕸️ Player Radar",
+        "⊕ 2-Axis Plot",
         "📐 Play Style (PCA)",
         "🔧 Custom Metric",
     ])
@@ -1191,6 +1209,64 @@ else:
                 st.caption("Outer = higher percentile among all filtered players.")
             else:
                 st.info("Select at least 2 players and 3 metrics.")
+
+    with tab_scatter2:
+        st.markdown("## 2-Axis Player Plot")
+        st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
+        st.caption("選手数が多いため上位N名に絞って表示します。ポジション・チームフィルターと組み合わせてください。")
+        col_a2, col_b2 = st.columns([1, 3])
+        with col_a2:
+            px_label = st.selectbox("X Axis", all_player_labels,
+                                    index=all_player_labels.index("xG p90"), key="px")
+            py_label = st.selectbox("Y Axis", all_player_labels,
+                                    index=all_player_labels.index("xA p90"), key="py")
+            show_n2  = st.slider("表示人数（上位N名）", 10, 100, 30, 5)
+            color_by = st.selectbox("色分け", ["position", "team_name"], key="pcol")
+        with col_b2:
+            px_col = PLAYER_METRICS[px_label][0]
+            py_col = PLAYER_METRICS[py_label][0]
+            if px_col not in df_filt.columns or py_col not in df_filt.columns:
+                st.warning("選択した指標がこのシーズンでは利用できません")
+            else:
+                # 両軸の合計スコアでTop N を選出
+                _xs = (df_filt[px_col] - df_filt[px_col].min()) / (df_filt[px_col].max() - df_filt[px_col].min() + 1e-9)
+                _ys = (df_filt[py_col] - df_filt[py_col].min()) / (df_filt[py_col].max() - df_filt[py_col].min() + 1e-9)
+                df_s2 = df_filt.copy()
+                df_s2["_rank_score"] = _xs + _ys
+                df_s2 = df_s2.nlargest(int(show_n2), "_rank_score")
+
+                pos_color2 = {"GK":"#F59E0B","DEF":"#3B82F6","MID":"#8B5CF6","FWD":"#EF4444"}
+                if color_by == "position":
+                    colors2 = [pos_color2.get(p, "#64748b") for p in df_s2["position"]]
+                else:
+                    _teams  = df_s2["team_name"].tolist()
+                    _cmap2  = team_color_map(_teams)
+                    colors2 = [_cmap2.get(t, "#64748b") for t in _teams]
+
+                fig_s2, ax_s2 = plt.subplots(figsize=(8, 6))
+                apply_dark_style(fig_s2, ax_s2)
+                ax_s2.scatter(df_s2[px_col], df_s2[py_col],
+                              c=colors2, s=70, alpha=0.85, edgecolors="#374151", lw=0.4, zorder=3)
+                ax_s2.axhline(df_filt[py_col].mean(), color="#555", ls="--", lw=0.8)
+                ax_s2.axvline(df_filt[px_col].mean(), color="#555", ls="--", lw=0.8)
+                for _, row in df_s2.iterrows():
+                    ax_s2.annotate(row["player_name"][:12],
+                                   (row[px_col], row[py_col]),
+                                   xytext=(4, 4), textcoords="offset points",
+                                   fontsize=6.5, color="#e2e8f0", alpha=0.85)
+                ax_s2.set_xlabel(px_label, color="#94a3b8")
+                ax_s2.set_ylabel(py_label, color="#94a3b8")
+                ax_s2.set_title(f"{px_label}  vs  {py_label}  (Top {show_n2})",
+                                color="#e2e8f0", fontweight="bold")
+                # 凡例（ポジション別）
+                if color_by == "position":
+                    import matplotlib.patches as _mp
+                    _handles = [_mp.Patch(color=c, label=p) for p, c in pos_color2.items()]
+                    ax_s2.legend(handles=_handles, fontsize=8,
+                                 facecolor="#1f2937", edgecolor="#374151", labelcolor="#e2e8f0")
+                plt.tight_layout()
+                st.pyplot(fig_s2, use_container_width=True)
+                st.caption(f"破線 = フィルタ後の平均値。両軸スコア上位{show_n2}名を表示。")
 
     with tab_pcap:
         st.markdown("## Play Style Analysis (PCA)")
