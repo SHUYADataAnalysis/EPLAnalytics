@@ -503,15 +503,19 @@ def radar(df_sel, metrics, labels, title, z_pool=None):
     for col in metrics:
         pv = pool[col].dropna()
         if len(pv) == 0:
-            df_pct[col] = 0.5
+            df_pct[col] = 0.0
             continue
-        pv_max = pv.max()
-        def _pct(v):
-            # 値が0かつプール最大値も0（全員0）→ 0%として扱う
-            if v == 0 and pv_max == 0:
+        pv_nonzero = pv[pv > 0]
+        pv_max     = pv.max()
+        def _pct(v, _pv=pv, _pv_nz=pv_nonzero, _pv_max=pv_max):
+            if v <= 0:
+                # 値が0以下: プールに非ゼロが存在する場合は最下位(0.0)
+                # 全員0の指標は 0.0 (意味なし)
                 return 0.0
-            # 値が0で他に非ゼロがある → 下位（パーセンタイル0に近い）
-            return float((pv <= v).mean())
+            # 値が正: 非ゼロプール内でのパーセンタイル
+            if len(_pv_nz) == 0:
+                return 0.0
+            return float((_pv_nz <= v).mean())
         df_pct[col] = df_pct[col].apply(_pct)
     n      = len(labels)
     angles = np.linspace(0, 2*np.pi, n, endpoint=False).tolist()
@@ -1045,9 +1049,9 @@ else:
         "xGI p90":        ("xGI_p90",                     "xGI per 90 mins",            "Attack"),
         "Goals p90":      ("goals_p90",                   "Goals per 90 mins",          "Attack"),
         "Assists p90":    ("assists_p90",                  "Assists per 90 mins",        "Attack"),
-        "Threat":         ("threat",                       "ゴール脅威スコア。シュート数・位置・PA内行動から算出（高いほど得点力あり）",                       "FPL Threat score",           "Attack"),
-        "Creativity":     ("creativity",                   "チャンスメイク指標。キーパス・クロス・スルーパスの量と質を評価",                   "FPL Creativity score",       "Playmaking"),
-        "Influence":      ("influence",                    "試合全体への関与度。ボールタッチ・デュエル・守備行動を包括的に評価",                    "FPL Influence score",        "Playmaking"),
+        "Threat":         ("threat",                       "FPL Threat score",                                  "FPL Threat score",           "Attack"),
+        "Creativity":     ("creativity",                   "FPL Creativity score",                          "FPL Creativity score",       "Playmaking"),
+        "Influence":      ("influence",                    "FPL Influence score",                            "FPL Influence score",        "Playmaking"),
         "ICT Index":      ("ict_index",                    "FPL ICT combined",           "Playmaking"),
         "xGC":            ("expected_goals_conceded",      "Expected goals conceded",    "Defense"),
         "Saves":          ("saves",                        "Total saves (GK)",           "Defense"),
@@ -1062,12 +1066,12 @@ else:
         "Red Cards":      ("red_cards",                    "Red cards",                  "Discipline"),
         "Tackles":        ("tackles",                      "Tackles (2025-26+)",          "Defense"),
         "Tackles p90":    ("tackles_p90",                  "Tackles per 90 mins",         "Defense"),
-        "Recoveries":     ("recoveries",                   "ルーズボール・こぼれ球の回収数。デュエル後の球際回収やクリアの拾い直しをカウント（2025-26+）",                   "Ball recoveries (2025-26+)",  "Defense"),
-        "Recoveries p90": ("recoveries_p90",               "ルーズボール回収 per 90分（2025-26+）",               "Recoveries per 90 mins",      "Defense"),
+        "Recoveries":     ("recoveries",                   "Ball recoveries (2025-26+)",                    "Ball recoveries (2025-26+)",  "Defense"),
+        "Recoveries p90": ("recoveries_p90",               "Recoveries per 90 mins",                    "Recoveries per 90 mins",      "Defense"),
         "CBI":            ("clearances_blocks_interceptions","Clearances+Blocks+Interceptions","Defense"),
         "CBI p90":        ("cbi_p90",                      "CBI per 90 mins",             "Defense"),
-        "Def Contribution":("defensive_contribution",      "FPL独自の守備貢献スコア。タックル・クリア・インターセプト等を総合評価（2025-26+）",      "Defensive contribution score","Defense"),
-        "Def Contribution p90":("def_contribution_p90",   "守備貢献スコア per 90分（2025-26+）",   "Def contribution per 90",     "Defense"),
+        "Def Contribution":("defensive_contribution",      "Defensive contribution score","Defense"),
+        "Def Contribution p90":("def_contribution_p90",   "Def contribution per 90",     "Defense"),
         "Bonus":          ("bonus",                        "FPL Bonus points",            "FPL"),
         "FPL Points":     ("total_points",                 "Total FPL points",            "FPL"),
         "Price (£M)":     ("price_m",                     "Current FPL price",           "FPL"),
@@ -1106,20 +1110,30 @@ else:
 
         with st.expander("📖 指標の読み方・使い方ガイド", expanded=False):
             st.markdown("""
-            #### FPL独自指標（ICT）の意味
+            #### 主要指標の説明
             | 指標 | 意味 | 参考 |
             |------|------|------|
-            | **xG** | シュートのゴール期待値の合計。得点の実力値 | 得点数と比較するとLuck(運)がわかる |
-            | **xA** | アシストパスのxG合計。パスの質の指標 | — |
+            | **xG** | Expected Goals。シュートのゴール期待値の合計 | 得点数と比較するとLuck(運)がわかる |
+            | **xA** | Expected Assists。アシストパスのxG合計 | — |
             | **xGI / xGI p90** | xG+xA。攻撃への総関与度 | p90は90分あたりの値（出場時間補正） |
-            | **xGC** | 出場中の被xG。守備貢献の反対側の指標（低いほど良い） | — |
-            | **Creativity** | キーパス・クロス・スルーパス等のチャンスメイク量 | MF・攻撃的なDFが高い |
-            | **Threat** | シュートの位置・数から算出するゴール脅威スコア | FW・得点力の高い選手が高い |
-            | **Influence** | ボールタッチ・デュエル・守備を含む試合関与度の総合値 | 中盤のキーマンが高い |
-            | **ICT Index** | Influence+Creativity+Threatの合成。FPL的な総合評価 | — |
-            | **Goal Luck** | 実得点 − xG。プラスなら「xGより多く決めた」（好調/運) | — |
-            | **Def Luck** | xGC − 失点。プラスなら「xGより少ない失点」（好守/運) | — |
-            | **CBI** | クリアランス+ブロック+インターセプトの合計。守備行動量 | DF・守備的MFが高い |
+            | **xGC** | Expected Goals Conceded。出場中の被期待得点（低いほど良い） | — |
+            | **Goal Luck** | 実得点 − xG。プラスなら期待値より多く決めた | — |
+            | **Def Luck** | xGC − 失点。プラスなら期待値より少ない失点 | — |
+            | **CBI** | Clearances+Blocks+Interceptions の合計 | DF・守備的MFが高い |
+
+            #### FPL独自指標（ICT）の詳細
+            | 指標 | 詳細な意味 |
+            |------|-----------|
+            | **Creativity** | チャンスメイクの量と質を評価。キーパス・クロス・スルーパスが多いほど高い。トップ下やクリエイティブなMFが高い値を示す（例: デ・ブライネ） |
+            | **Threat** | ゴールへの脅威を数値化。シュート数・シュート位置・PA内行動から算出。ストライカーや得点力の高い選手が高い（例: サラー） |
+            | **Influence** | 試合全体への関与度の総合値。ボールタッチ・デュエル・守備行動を包括的に評価。試合を動かすMFやキャプテン的存在が高い |
+            | **ICT Index** | Influence・Creativity・Threatの合成スコア。FPLの総合評価指標 |
+
+            #### 2025-26から追加された守備指標
+            | 指標 | 詳細な意味 |
+            |------|-----------|
+            | **Recoveries** | ルーズボール・こぼれ球の回収数。タックルやインターセプトとは別に、デュエル後のこぼれ球や相手クリアの拾い直しをカウント |
+            | **Def Contribution** | FPL独自の守備貢献スコア。タックル・クリア・インターセプト・ブロック等を総合的に評価した複合スコア |
 
             #### 使い方のヒント
             - **Top 10 Rankings**: ポジションフィルターと組み合わせて使うと効果的です（例: MIDのみでxA p90ランキング）
