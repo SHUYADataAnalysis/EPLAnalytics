@@ -1271,14 +1271,27 @@ else:
         col_a2, col_b2 = st.columns([1, 3])
         with col_a2:
             px_label = st.selectbox("X Axis", all_player_labels,
-                                    index=all_player_labels.index("xG p90"), key="px")
+                                    index=all_player_labels.index("xG") if "xG" in all_player_labels else 0, key="px")
             py_label = st.selectbox("Y Axis", all_player_labels,
-                                    index=all_player_labels.index("xA p90"), key="py")
+                                    index=all_player_labels.index("xA") if "xA" in all_player_labels else 1, key="py")
+            use_p90_sc = st.toggle("per 90分に変換", value=False, key="sc2_p90",
+                                    help="選んだ指標を90分あたりに変換します")
             show_n2  = st.slider("表示人数（上位N名）", 10, 100, 30, 5)
             color_by = st.selectbox("色分け", ["position", "team_name"], key="pcol")
         with col_b2:
-            px_col = PLAYER_METRICS[px_label][0]
-            py_col = PLAYER_METRICS[py_label][0]
+            _p90_skip_sc = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _px_raw = PLAYER_METRICS[px_label][0]
+            _py_raw = PLAYER_METRICS[py_label][0]
+            if use_p90_sc and _px_raw not in _p90_skip_sc:
+                px_col, px_disp = to_p90(_px_raw, df_filt)
+                px_label_disp = px_label + " p90"
+            else:
+                px_col, px_disp, px_label_disp = _px_raw, px_label, px_label
+            if use_p90_sc and _py_raw not in _p90_skip_sc:
+                py_col, py_disp = to_p90(_py_raw, df_filt)
+                py_label_disp = py_label + " p90"
+            else:
+                py_col, py_disp, py_label_disp = _py_raw, py_label, py_label
             if px_col not in df_filt.columns or py_col not in df_filt.columns:
                 st.warning("選択した指標がこのシーズンでは利用できません")
             else:
@@ -1308,9 +1321,9 @@ else:
                                    (row[px_col], row[py_col]),
                                    xytext=(4, 4), textcoords="offset points",
                                    fontsize=6.5, color="#1a1a2e", alpha=0.9)
-                ax_s2.set_xlabel(px_label, color="#333333")
-                ax_s2.set_ylabel(py_label, color="#333333")
-                ax_s2.set_title(f"{px_label}  vs  {py_label}  (Top {show_n2})",
+                ax_s2.set_xlabel(px_label_disp, color="#333333")
+                ax_s2.set_ylabel(py_label_disp, color="#333333")
+                ax_s2.set_title(f"{px_label_disp}  vs  {py_label_disp}  (Top {show_n2})",
                                 color="#1a1a2e", fontweight="bold")
                 # 凡例（ポジション別）
                 if color_by == "position":
@@ -1331,11 +1344,23 @@ else:
                                   default=["MID"])
         df_pca_p = df_filt[df_filt["position"].isin(pca_pos)].copy()
 
-        sel_pcap = st.multiselect("Metrics for PCA (4–8 recommended)", all_player_labels,
-                                   default=["xG p90","xA p90","Creativity",
-                                            "Threat","Influence","Saves p90"])
+        use_p90_pca = st.toggle("per 90分に変換", value=True, key="pca_p90",
+                                     help="指標を90分あたりに変換して比較します")
+        sel_pcap = st.multiselect("Metrics for PCA (4-8 recommended)", all_player_labels,
+                                   default=["xG","xA","Creativity","Threat","Influence","Saves"])
         if len(df_pca_p) >= 5 and len(sel_pcap) >= 3:
-            pcap_cols = [PLAYER_METRICS[m][0] for m in sel_pcap]
+            _p90_skip_pca = {"price_m","goal_luck","def_luck","minutes","starts"}
+            pcap_cols = []
+            sel_pcap_disp = []
+            for m in sel_pcap:
+                raw_c = PLAYER_METRICS[m][0]
+                if use_p90_pca and raw_c not in _p90_skip_pca and not raw_c.endswith("_p90"):
+                    p90c, _ = to_p90(raw_c, df_pca_p)
+                    pcap_cols.append(p90c)
+                    sel_pcap_disp.append(m + " p90")
+                else:
+                    pcap_cols.append(raw_c)
+                    sel_pcap_disp.append(m)
             # PCA実行
             X = df_pca_p[pcap_cols].fillna(0).values.astype(float)
             X_z = (X - X.mean(0)) / (X.std(0) + 1e-9)
@@ -1372,7 +1397,7 @@ else:
 
             # 寄与度 → プレースタイルラベル提案
             col1, col2 = st.columns(2)
-            load_df_p = pd.DataFrame({"Metric": sel_pcap,
+            load_df_p = pd.DataFrame({"Metric": sel_pcap_disp,
                                       "PC1 Loading": loadings_p[:,0].round(3),
                                       "PC2 Loading": loadings_p[:,1].round(3)})
             top_pc1 = load_df_p.reindex(load_df_p["PC1 Loading"].abs().sort_values(ascending=False).index).iloc[:3]
@@ -1412,6 +1437,8 @@ else:
         st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
 
         pmetric_name = st.text_input("Metric Name", value="My Player Score")
+        use_p90_cust = st.toggle("per 90分に変換", value=False, key="cust_p90",
+                                  help="全指標を90分あたりに変換してから計算します")
         pn_rows = st.number_input("Number of metrics", 1, 8, 3, key="pn")
         pcomps = []
         st.columns([3,2,2,3])[0].markdown("**Metric**")
@@ -1431,10 +1458,21 @@ else:
         show_pn = st.radio("Show top N", [10,20,30], horizontal=True, key="pshow")
 
         if st.button("▶  Calculate & Rank", type="primary", key="pcalc"):
-            df_pc = df_filt[["player_name","team_name","position","minutes"]
-                            + [c[1] for c in pcomps]].copy()
+            _p90_skip_c = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _pcomps_resolved = []
+            for r in pcomps:
+                raw_c = r[1]
+                if use_p90_cust and raw_c not in _p90_skip_c and not raw_c.endswith("_p90"):
+                    p90c, _ = to_p90(raw_c, df_filt)
+                    _pcomps_resolved.append((r[0], p90c, r[2], r[3]))
+                else:
+                    _pcomps_resolved.append(r)
+            df_pc = df_filt[["player_name","team_name","position","minutes"]].copy()
+            for r in _pcomps_resolved:
+                if r[1] not in df_pc.columns and r[1] in df_filt.columns:
+                    df_pc[r[1]] = df_filt[r[1]].values
             df_pc[pmetric_name] = sum(
-                r[2]*r[3]*df_pc[r[1]].fillna(0) for r in pcomps
+                r[2]*r[3]*df_pc[r[1]].fillna(0) for r in _pcomps_resolved
             )
             df_pc = df_pc.sort_values(pmetric_name, ascending=False).head(int(show_pn)).reset_index(drop=True)
             df_pc.index += 1
