@@ -1267,17 +1267,17 @@ else:
                     ax_s2.annotate(row["player_name"][:12],
                                    (row[px_col], row[py_col]),
                                    xytext=(4, 4), textcoords="offset points",
-                                   fontsize=6.5, color="#e2e8f0", alpha=0.85)
-                ax_s2.set_xlabel(px_label, color="#94a3b8")
-                ax_s2.set_ylabel(py_label, color="#94a3b8")
+                                   fontsize=6.5, color="#1a1a2e", alpha=0.9)
+                ax_s2.set_xlabel(px_label, color="#333333")
+                ax_s2.set_ylabel(py_label, color="#333333")
                 ax_s2.set_title(f"{px_label}  vs  {py_label}  (Top {show_n2})",
-                                color="#e2e8f0", fontweight="bold")
+                                color="#1a1a2e", fontweight="bold")
                 # 凡例（ポジション別）
                 if color_by == "position":
                     import matplotlib.patches as _mp
                     _handles = [_mp.Patch(color=c, label=p) for p, c in pos_color2.items()]
                     ax_s2.legend(handles=_handles, fontsize=8,
-                                 facecolor="#1f2937", edgecolor="#374151", labelcolor="#e2e8f0")
+                                 facecolor="#f5f7fa", edgecolor="#cccccc", labelcolor="#1a1a2e")
                 plt.tight_layout()
                 st.pyplot(fig_s2, use_container_width=True)
                 st.caption(f"破線 = フィルタ後の平均値。両軸スコア上位{show_n2}名を表示。")
