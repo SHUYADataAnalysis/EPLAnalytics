@@ -364,6 +364,10 @@ NUM_COLS_GW = [
 def prep_players(df_raw, team_id_map):
     df = df_raw.copy()
     df["player_name"] = df["web_name"] if "web_name" in df.columns else df.index.astype(str)
+    if "id" not in df.columns and df.index.name == "id":
+        df = df.reset_index()
+    if "id" not in df.columns:
+        df["id"] = range(len(df))  # fallback
     df["position"]    = (df["element_type"] if "element_type" in df.columns
                          else pd.Series(0, index=df.index)).map(POS_MAP).fillna("UNK")
     df["team_name"]   = (df["team"] if "team" in df.columns
@@ -671,6 +675,54 @@ st.sidebar.markdown("---")
 # ── Load ──────────────────────────────────────────────────────────────────────
 with st.spinner("Loading data..."):
     df_p_raw, df_g_raw, df_t_raw = load_season(season)
+
+# GW範囲フィルター（サイドバー）
+if df_g_raw is not None and "GW" in df_g_raw.columns:
+    _gw_col = "GW"
+elif df_g_raw is not None and "round" in df_g_raw.columns:
+    _gw_col = "round"
+else:
+    _gw_col = None
+
+if _gw_col:
+    _gw_vals = sorted(df_g_raw[_gw_col].dropna().unique().astype(int))
+    _gw_min, _gw_max = int(min(_gw_vals)), int(max(_gw_vals))
+    st.sidebar.markdown("**GW範囲フィルター**")
+    _gw_range = st.sidebar.slider(
+        "節（GW）", _gw_min, _gw_max, (_gw_min, _gw_max),
+        help=f"取得済みGW: {_gw_min}〜{_gw_max}節。範囲を絞ると指定期間のデータのみで集計します。"
+    )
+    if _gw_range != (_gw_min, _gw_max):
+        df_g_raw = df_g_raw[
+            df_g_raw[_gw_col].between(_gw_range[0], _gw_range[1])
+        ].copy()
+        # players_raw は累積値なので、GW別データを使って累積を再計算
+        _num_cols_agg = [
+            "goals_scored","assists","expected_goals","expected_assists",
+            "expected_goal_involvements","expected_goals_conceded","goals_conceded",
+            "saves","clean_sheets","yellow_cards","red_cards","bonus",
+            "minutes","tackles","recoveries","clearances_blocks_interceptions",
+            "defensive_contribution",
+        ]
+        _agg_dict = {c: "sum" for c in _num_cols_agg if c in df_g_raw.columns}
+        # influence/creativity/threat はGW別データにある
+        for _ic in ["influence","creativity","threat","ict_index"]:
+            if _ic in df_g_raw.columns:
+                _agg_dict[_ic] = "sum"
+        df_p_raw = (
+            df_g_raw.groupby("element")
+            .agg(_agg_dict)
+            .reset_index()
+            .rename(columns={"element": "id"})
+        )
+        # web_name / element_type / team をplayers_rawからマージ
+        if df_p_raw is not None and "web_name" not in df_p_raw.columns:
+            _orig = load_season(season)[0]
+            if _orig is not None:
+                _meta = _orig[["id","web_name","element_type","team","now_cost"]].copy()
+                df_p_raw = df_p_raw.merge(_meta, on="id", how="left")
+        st.sidebar.caption(f"GW {_gw_range[0]}〜{_gw_range[1]}節のデータで集計中")
+    st.sidebar.markdown("---")
 
 if df_p_raw is None or df_g_raw is None:
     st.error(f"""
@@ -1106,12 +1158,13 @@ else:
                         f"Filtered players: <b style='color:{C['amber']}'>{len(df_filt)}</b></div>",
                         unsafe_allow_html=True)
 
-    tab_avail, tab_top10, tab_prad, tab_scatter2, tab_pcap, tab_custp = st.tabs([
+    tab_avail, tab_top10, tab_prad, tab_scatter2, tab_pcap, tab_unit, tab_custp = st.tabs([
         "📋 Available Metrics",
         "🏆 Top 10 Rankings",
         "🕸️ Player Radar",
         "⊕ 2-Axis Plot",
         "📐 Play Style (PCA)",
+        "👥 Unit Analysis",
         "🔧 Custom Metric",
     ])
 
@@ -1431,6 +1484,149 @@ else:
                              .style.format({"PC1":"{:+.2f}"}), hide_index=True)
         else:
             st.info("5人以上の選手と3指標以上を選択してください。")
+
+    with tab_unit:
+        st.markdown("## Unit Analysis")
+        st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
+        st.caption(
+            "複数のユニット（選手の組み合わせ）を比較します。"
+            "各ユニットの共出場試合に限定して指標を合算・平均して比較します。"
+        )
+
+        # ユニット定義
+        n_units = st.number_input("比較するユニット数", 2, 4, 2, key="n_units")
+        unit_defs = []
+        for _u in range(int(n_units)):
+            with st.expander(f"ユニット {_u+1}", expanded=True):
+                _uname = st.text_input("ユニット名", value=f"Unit {_u+1}", key=f"uname_{_u}")
+                _uplayers = st.multiselect(
+                    "選手を選択（2〜5人）",
+                    sorted(df_filt["player_name"].tolist()),
+                    key=f"uplayers_{_u}"
+                )
+                unit_defs.append({"name": _uname, "players": _uplayers})
+
+        sel_um = st.multiselect(
+            "比較する指標",
+            all_player_labels,
+            default=["xGC","CBI","Recoveries","Tackles","Clean Sheets"],
+            key="unit_metrics"
+        )
+        use_p90_unit = st.toggle("per 90分に変換", value=True, key="unit_p90",
+                                  help="共出場時間で割った値で比較します")
+
+        if st.button("▶ ユニット比較を実行", type="primary", key="run_unit"):
+            _p90_skip_u = {"price_m","goal_luck","def_luck","minutes","starts"}
+
+            # GWデータを使って共出場試合を特定
+            if df_g_raw is None or "element" not in df_g_raw.columns:
+                st.warning("GWデータが読み込めていません")
+            else:
+                unit_results = []
+                valid = True
+
+                for _ud in unit_defs:
+                    if len(_ud["players"]) < 2:
+                        st.warning(f"{_ud['name']}: 選手を2人以上選んでください")
+                        valid = False
+                        break
+
+                    # 選手名→element IDをマッピング
+                    _id_map = df_players[["player_name","id"]].drop_duplicates() if "id" in df_players.columns else None
+                    if _id_map is None:
+                        st.warning("選手IDが取得できません")
+                        valid = False
+                        break
+
+                    _ids = _id_map[_id_map["player_name"].isin(_ud["players"])]["id"].tolist()
+
+                    # 全員が出場したGWを特定
+                    _gw_col_u = "GW" if "GW" in df_g_raw.columns else "round"
+                    _participated = df_g_raw[df_g_raw["element"].isin(_ids)].copy()
+                    _gw_counts = _participated.groupby(_gw_col_u)["element"].nunique()
+                    _shared_gws = _gw_counts[_gw_counts >= len(_ids)].index.tolist()
+
+                    if not _shared_gws:
+                        st.warning(f"{_ud['name']}: 全員が共出場した試合がありません")
+                        valid = False
+                        break
+
+                    # 共出場試合のデータのみ抽出して合算
+                    _shared_data = _participated[_participated[_gw_col_u].isin(_shared_gws)]
+                    _total_min = _shared_data.groupby("element")["minutes"].sum().sum()
+
+                    row = {"ユニット": _ud["name"],
+                           "選手": ", ".join(_ud["players"]),
+                           "共出場GW": len(_shared_gws),
+                           "総出場分": int(_total_min)}
+
+                    for _m in sel_um:
+                        _raw_c = PLAYER_METRICS[_m][0]
+                        if _raw_c in _shared_data.columns:
+                            _val = pd.to_numeric(_shared_data[_raw_c], errors="coerce").sum()
+                            if use_p90_unit and _raw_c not in _p90_skip_u:
+                                _mins = max(_total_min / len(_ids), 1)
+                                _val = _val / (_mins / 90)
+                                _label = _m + " p90"
+                            else:
+                                _label = _m
+                            row[_label] = round(float(_val), 3)
+
+                    unit_results.append(row)
+
+                if valid and unit_results:
+                    df_unit = pd.DataFrame(unit_results)
+                    metric_cols = [c for c in df_unit.columns
+                                   if c not in ["ユニット","選手","共出場GW","総出場分"]]
+
+                    st.markdown("**集計結果**")
+                    st.dataframe(
+                        df_unit[["ユニット","選手","共出場GW"] + metric_cols]
+                        .style.background_gradient(subset=metric_cols, cmap="RdYlGn"),
+                        use_container_width=True, hide_index=True
+                    )
+
+                    if len(metric_cols) >= 3:
+                        # ① レーダーチャート（全体像）
+                        st.markdown("**レーダーチャート（全体像）**")
+                        df_u_radar = df_unit.set_index("ユニット")[metric_cols]
+                        fig_ur = radar(df_u_radar, metric_cols, metric_cols,
+                                       "Unit Comparison Radar",
+                                       z_pool=df_u_radar)
+                        st.pyplot(fig_ur, use_container_width=True)
+                        st.caption("相対評価: 比較ユニット内でのパーセンタイル")
+
+                    # ② グループ棒グラフ（指標別比較）
+                    st.markdown("**指標別比較（グループ棒グラフ）**")
+                    _n_metrics = len(metric_cols)
+                    _n_units_r = len(unit_results)
+                    _fig_height = max(4, _n_metrics * 0.8)
+                    fig_ub, ax_ub = plt.subplots(figsize=(8, _fig_height))
+                    apply_dark_style(fig_ub, ax_ub)
+
+                    import numpy as _np2
+                    _x = _np2.arange(_n_metrics)
+                    _bar_w = 0.8 / _n_units_r
+                    _colors_u = ["#48cae4","#f4a261","#22c55e","#a78bfa"]
+
+                    for _ui, _ud in enumerate(unit_results):
+                        _vals = [_ud.get(c, 0) for c in metric_cols]
+                        _offset = (_ui - _n_units_r/2 + 0.5) * _bar_w
+                        ax_ub.barh(_x + _offset, _vals, _bar_w * 0.9,
+                                   label=_ud["name"],
+                                   color=_colors_u[_ui % len(_colors_u)],
+                                   alpha=0.85)
+
+                    ax_ub.set_yticks(_x)
+                    ax_ub.set_yticklabels(metric_cols, fontsize=9, color="#e2e8f0")
+                    ax_ub.set_xlabel("値", color="#94a3b8")
+                    ax_ub.set_title("Unit Comparison by Metric", color="#e2e8f0", fontweight="bold")
+                    ax_ub.legend(facecolor="#1f2937", edgecolor="#374151",
+                                 labelcolor="#e2e8f0", fontsize=9)
+                    ax_ub.axvline(0, color="#374151", lw=0.7)
+                    plt.tight_layout()
+                    st.pyplot(fig_ub, use_container_width=True)
+                    st.caption(f"共出場GW数が少ない場合（目安: 5節未満）は統計的信頼性が下がります。")
 
     with tab_custp:
         st.markdown("## 🔧 Build Your Own Player Metric")
