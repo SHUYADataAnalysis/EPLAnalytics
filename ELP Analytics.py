@@ -388,7 +388,7 @@ def prep_players(df_raw, team_id_map):
     df["assists_p90"]  = df["assists"] / df["mins_p90"]
     df["saves_p90"]    = df["saves"] / df["mins_p90"]
     # 追加p90列（切り替え機能用）
-    for _c in ["influence","creativity","threat","ict_index",
+    for _c in ["influence","creativity","threat","ict_index","goal_luck","def_luck",
                "clean_sheets","goals_conceded","yellow_cards","red_cards",
                "bonus","total_points"]:
         df[f"{_c}_p90"] = df[_c] / df["mins_p90"]
@@ -1322,7 +1322,7 @@ else:
             show_n = st.radio("Show", [10, 20, 30], horizontal=True)
         with col_b:
             _col_r_raw = PLAYER_METRICS[rank_metric][0]
-            _p90_skip_top = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _p90_skip_top = {"price_m","minutes","starts"}
             # p90変換
             if use_p90_top and _col_r_raw not in _p90_skip_top and not _col_r_raw.endswith("_p90"):
                 col_r, _ = to_p90(_col_r_raw, df_filt)
@@ -1386,7 +1386,7 @@ else:
         with col_b:
             if len(sel_p) >= 2 and len(sel_pm) >= 3:
                 # p90変換（トグルONかつ既にp90でない指標のみ）
-                _p90_skip = {"price_m","goal_luck","def_luck","minutes","starts",
+                _p90_skip = {"price_m","minutes","starts",
                              "xG_p90","xA_p90","xGI_p90","goals_p90","assists_p90",
                              "saves_p90","tackles_p90","recoveries_p90","cbi_p90","def_contribution_p90"}
                 pm_cols = []
@@ -1428,7 +1428,7 @@ else:
             show_n2  = st.slider("表示人数（上位N名）", 10, 100, 30, 5)
             color_by = st.selectbox("色分け", ["position", "team_name"], key="pcol")
         with col_b2:
-            _p90_skip_sc = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _p90_skip_sc = {"price_m","minutes","starts"}
             _px_raw = PLAYER_METRICS[px_label][0]
             _py_raw = PLAYER_METRICS[py_label][0]
             if use_p90_sc and _px_raw not in _p90_skip_sc:
@@ -1500,7 +1500,7 @@ else:
         sel_pcap = st.multiselect("Metrics for PCA (4-8 recommended)", all_player_labels,
                                    default=["xG","xA","Creativity","Threat","Influence","Saves"])
         if len(df_pca_p) >= 5 and len(sel_pcap) >= 3:
-            _p90_skip_pca = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _p90_skip_pca = {"price_m","minutes","starts"}
             pcap_cols = []
             sel_pcap_disp = []
             for m in sel_pcap:
@@ -1614,7 +1614,7 @@ else:
                                   help="共出場時間で割った値で比較します")
 
         if st.button("▶ ユニット比較を実行", type="primary", key="run_unit"):
-            _p90_skip_u = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _p90_skip_u = {"price_m","minutes","starts"}
 
             # GWデータを使って共出場試合を特定
             if df_g_raw is None or "element" not in df_g_raw.columns:
@@ -1726,7 +1726,7 @@ else:
         show_pn = st.radio("Show top N", [10,20,30], horizontal=True, key="pshow")
 
         if st.button("▶  Calculate & Rank", type="primary", key="pcalc"):
-            _p90_skip_c = {"price_m","goal_luck","def_luck","minutes","starts"}
+            _p90_skip_c = {"price_m","minutes","starts"}
             _pcomps_resolved = []
             for r in pcomps:
                 raw_c = r[1]
