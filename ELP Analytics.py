@@ -976,13 +976,84 @@ if "Team" in page:
                                    index=all_metric_labels.index("xG per Match"))
             y_label = st.selectbox("Y Axis", all_metric_labels,
                                    index=all_metric_labels.index("xGC per Match"))
+            show_regression = st.toggle("📈 回帰分析を表示", value=False,
+                                         help="回帰直線・Pearson r・R²・Spearman ρを追加表示します")
         with col_b:
             x_col = TEAM_METRICS[x_label][0]
             y_col = TEAM_METRICS[y_label][0]
-            fig_s = scatter_2d(df_teams, x_col, y_col, "team_name",
-                               f"{x_label}  vs  {y_label}", tcmap)
-            st.pyplot(fig_s, use_container_width=True)
-            st.caption("Dashed lines = league average. Teams top-right lead on both axes.")
+
+            if show_regression:
+                # 回帰分析付き散布図
+                from scipy.stats import pearsonr, spearmanr, linregress
+                _x = df_teams[x_col].fillna(0).values.astype(float)
+                _y = df_teams[y_col].fillna(0).values.astype(float)
+                _mask = np.isfinite(_x) & np.isfinite(_y)
+                _x, _y = _x[_mask], _y[_mask]
+                _df_reg = df_teams[_mask].copy()
+
+                slope, intercept, r_val, p_val, _ = linregress(_x, _y)
+                r_sq   = r_val ** 2
+                sp_r, sp_p = spearmanr(_x, _y)
+
+                fig_s = scatter_2d(_df_reg, x_col, y_col, "team_name",
+                                   f"{x_label}  vs  {y_label}", tcmap)
+                ax_s  = fig_s.get_axes()[0]
+
+                # 回帰直線
+                _x_line = np.linspace(_x.min(), _x.max(), 100)
+                _y_line = slope * _x_line + intercept
+                ax_s.plot(_x_line, _y_line, color="#f4a261",
+                          lw=2, ls="-", zorder=4, label="Regression line")
+
+                # 外れ値（残差が大きいチーム）を強調
+                _y_pred = slope * _x + intercept
+                _resid  = _y - _y_pred
+                _thresh = 1.5 * np.std(_resid)
+                _df_reg = _df_reg.reset_index(drop=True)
+                for _i, _row in _df_reg.iterrows():
+                    if abs(_resid[_i]) >= _thresh:
+                        ax_s.annotate(
+                            f"← {_row['team_name']}",
+                            (_x[_i], _y[_i]),
+                            xytext=(6, 0), textcoords="offset points",
+                            fontsize=8, color="#f4d03f", fontweight="bold"
+                        )
+
+                # 数式テキスト
+                _eq = f"y = {slope:.3f}x + {intercept:.3f}"
+                _stats = f"r = {r_val:.3f}  R² = {r_sq:.3f}  p = {p_val:.3f}"
+                ax_s.text(0.02, 0.97, f"{_eq}\n{_stats}",
+                          transform=ax_s.transAxes,
+                          va="top", ha="left", fontsize=9,
+                          color="#e2e8f0",
+                          bbox=dict(boxstyle="round,pad=0.3",
+                                    fc="#1f2937", ec="#374151", alpha=0.85))
+                ax_s.legend(facecolor="#1f2937", edgecolor="#374151",
+                            labelcolor="#e2e8f0", fontsize=9)
+                st.pyplot(fig_s, use_container_width=True)
+
+                # 統計サマリー
+                col_r1, col_r2, col_r3 = st.columns(3)
+                col_r1.metric("Pearson r",   f"{r_val:+.3f}",
+                              help="線形相関係数。±1に近いほど強い線形関係")
+                col_r2.metric("R²",          f"{r_sq:.3f}",
+                              help=f"決定係数。{x_label}が{y_label}の変動の{r_sq*100:.1f}%を説明")
+                col_r3.metric("Spearman ρ",  f"{sp_r:+.3f}",
+                              help="順位相関係数。外れ値に頑健")
+
+                _sig = "p < 0.001" if p_val < 0.001 else (f"p = {p_val:.3f}")
+                _strength = ("強い" if abs(r_val) > 0.7 else
+                             "中程度の" if abs(r_val) > 0.4 else "弱い")
+                _direction = "正" if r_val > 0 else "負"
+                st.caption(
+                    f"{_sig} | {x_label}と{y_label}の間に**{_strength}{_direction}の相関**があります。"
+                    f"回帰式: {_eq}  |  黄色ラベル = 残差が大きい外れ値チーム"
+                )
+            else:
+                fig_s = scatter_2d(df_teams, x_col, y_col, "team_name",
+                                   f"{x_label}  vs  {y_label}", tcmap)
+                st.pyplot(fig_s, use_container_width=True)
+                st.caption("破線 = リーグ平均。📈 回帰分析トグルをONにすると回帰直線・相関係数を表示します。")
 
     # ── Tab 3: PCA ────────────────────────────────────────────────────────────
     with tab_pca:
