@@ -418,10 +418,20 @@ def build_team_stats(dg_raw, team_id_map):
     ms = dg.dropna(subset=["gf","ga"]).groupby(["team","round"]).agg(
         gf=("gf","first"), ga=("ga","first")
     ).reset_index()
+    # 勝ち点計算（勝=3 引=1 負=0）
+    ms["pts"] = np.where(ms["gf"] > ms["ga"], 3,
+                np.where(ms["gf"] == ms["ga"], 1, 0))
+    ms["wins"]   = (ms["gf"] > ms["ga"]).astype(int)
+    ms["draws"]  = (ms["gf"] == ms["ga"]).astype(int)
+    ms["losses"] = (ms["gf"] < ms["ga"]).astype(int)
     scores = ms.groupby("team").agg(
-        goals_scored=("gf","sum"),
-        goals_conceded=("ga","sum"),
-        matches=("round","nunique"),
+        goals_scored =("gf",  "sum"),
+        goals_conceded=("ga", "sum"),
+        matches      =("round","nunique"),
+        points       =("pts", "sum"),
+        wins         =("wins","sum"),
+        draws        =("draws","sum"),
+        losses       =("losses","sum"),
     ).reset_index()
 
     # 攻撃指標（全選手集計）— 旧シーズンに存在しない列は0で補完
@@ -464,6 +474,7 @@ def build_team_stats(dg_raw, team_id_map):
     team["xG_per_match"]  = (team["xG"]  / m).round(2)
     team["xGC_per_match"] = (team["xGC"] / m).round(2)
     team["gf_per_match"]  = (team["goals_scored"] / m).round(2)
+    team["pts_per_match"] = (team["points"] / m).round(2)
     team["ga_per_match"]  = (team["goals_conceded"] / m).round(2)
     team["xG_diff"]       = (team["xG"] - team["xGC"]).round(2)
     team["goal_diff"]     = team["goals_scored"] - team["goals_conceded"]
@@ -835,7 +846,12 @@ if "Team" in page:
     # ── 利用可能指標一覧 ──────────────────────────────────────────────────────
     TEAM_METRICS = {
         # label: (col, description, category)
-        "Goals Scored":       ("goals_scored",   "Total goals scored",               "Attack"),
+        "Points":             ("points",         "Total points (W=3 D=1 L=0)",       "Results"),
+    "Wins":               ("wins",           "Number of wins",                    "Results"),
+    "Draws":              ("draws",          "Number of draws",                   "Results"),
+    "Losses":             ("losses",         "Number of losses",                  "Results"),
+    "Points per Match":   ("pts_per_match",  "Points / matches played",           "Results"),
+    "Goals Scored":       ("goals_scored",   "Total goals scored",               "Attack"),
         "Goals Conceded":     ("goals_conceded", "Total goals conceded",              "Defense"),
         "Goal Difference":    ("goal_diff",      "Goals scored − Goals conceded",     "Attack"),
         "xG (Total)":         ("xG",             "Expected goals scored",             "Attack"),
