@@ -1321,14 +1321,21 @@ else:
                                      help="選択した指標を90分あたりの値に変換して比較します")
             show_n = st.radio("Show", [10, 20, 30], horizontal=True)
         with col_b:
-            col_r = PLAYER_METRICS[rank_metric][0]
+            _col_r_raw = PLAYER_METRICS[rank_metric][0]
+            _p90_skip_top = {"price_m","goal_luck","def_luck","minutes","starts"}
+            # p90変換
+            if use_p90_top and _col_r_raw not in _p90_skip_top and not _col_r_raw.endswith("_p90"):
+                col_r, _ = to_p90(_col_r_raw, df_filt)
+                rank_metric_label = rank_metric + " p90"
+            else:
+                col_r = _col_r_raw
+                rank_metric_label = rank_metric
             if col_r not in df_filt.columns:
                 st.warning(f"Column '{col_r}' not available.")
             else:
-                # col_r が "minutes" 等の固定列と重複する場合の対処
                 _base_cols = ["player_name","team_name","position","minutes"]
                 _show_cols = _base_cols if col_r in _base_cols else _base_cols + [col_r]
-                df_top = (df_filt[list(dict.fromkeys(_show_cols))]  # 重複除去
+                df_top = (df_filt[list(dict.fromkeys(_show_cols))]
                           .sort_values(col_r, ascending=False)
                           .head(int(show_n))
                           .reset_index(drop=True))
@@ -1343,10 +1350,10 @@ else:
                 def pos_style(v):
                     c = pos_color.get(v,"#6b7280")
                     return f"background:{c};color:white;font-weight:700;border-radius:4px;text-align:center"
-                df_top_show = df_top.rename(columns={col_r: rank_metric})
+                df_top_show = df_top.rename(columns={col_r: rank_metric_label})
                 styled = (df_top_show.style
-                          .background_gradient(subset=[rank_metric], cmap="RdYlGn")
-                          .format({rank_metric: "{:.3f}"}))
+                          .background_gradient(subset=[rank_metric_label], cmap="RdYlGn")
+                          .format({rank_metric_label: "{:.3f}"}))
                 # pandas 3.x は .map()、旧版は .applymap()
                 try:
                     styled = styled.map(pos_style, subset=["position"])
