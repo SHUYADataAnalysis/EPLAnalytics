@@ -1327,13 +1327,11 @@ else:
             }
             # p90変換後の列名も含めて判定
             _raw_for_check = PLAYER_METRICS.get(rank_metric, ("",))[0]
-            _low_is_good_check = (
+            # col_rはcol_bで定義されるためここではraw列名のみで判定
+            _default_asc = (
                 _raw_for_check in _low_is_good_base or
-                any(_raw_for_check.startswith(b) for b in _low_is_good_base) or
-                col_r in _low_is_good_base or
-                any(col_r.startswith(b) for b in _low_is_good_base)
+                any(_raw_for_check.startswith(b) for b in _low_is_good_base)
             )
-            _default_asc = _low_is_good_check
             sort_asc = st.toggle(
                 "低い順に表示",
                 value=_default_asc,
