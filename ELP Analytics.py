@@ -254,6 +254,7 @@ APF_TEAM_NAME_MAP = {
     "West Ham United":         "West Ham",
     "Wolverhampton Wanderers": "Wolves",
     "Tottenham Hotspur":       "Spurs",
+    "Tottenham":               "Spurs",   # API-Footballの実際の表記
     "Leicester City":          "Leicester",
     "Ipswich Town":            "Ipswich",
     "Sheffield United":        "Sheffield Utd",
