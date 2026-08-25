@@ -1320,6 +1320,26 @@ else:
             use_p90_top = st.toggle("per 90分に変換", value=False, key="top10_p90",
                                      help="選択した指標を90分あたりの値に変換して比較します")
             show_n = st.radio("Show", [10, 20, 30], horizontal=True)
+            # 低い値が良い指標は昇順にする
+            _low_is_good_base = {
+                "goals_conceded", "expected_goals_conceded",
+                "yellow_cards", "red_cards", "price_m",
+            }
+            # p90変換後の列名も含めて判定
+            _raw_for_check = PLAYER_METRICS.get(rank_metric, ("",))[0]
+            _low_is_good_check = (
+                _raw_for_check in _low_is_good_base or
+                any(_raw_for_check.startswith(b) for b in _low_is_good_base) or
+                col_r in _low_is_good_base or
+                any(col_r.startswith(b) for b in _low_is_good_base)
+            )
+            _default_asc = _low_is_good_check
+            sort_asc = st.toggle(
+                "低い順に表示",
+                value=_default_asc,
+                key="top10_asc",
+                help="xGC・失点数・イエローカードなど、低い値が良い指標に使います"
+            )
         with col_b:
             _col_r_raw = PLAYER_METRICS[rank_metric][0]
             _p90_skip_top = {"price_m","minutes","starts"}
@@ -1336,16 +1356,22 @@ else:
                 _base_cols = ["player_name","team_name","position","minutes"]
                 _show_cols = _base_cols if col_r in _base_cols else _base_cols + [col_r]
                 df_top = (df_filt[list(dict.fromkeys(_show_cols))]
-                          .sort_values(col_r, ascending=False)
+                          .sort_values(col_r, ascending=sort_asc)
                           .head(int(show_n))
                           .reset_index(drop=True))
                 df_top.index += 1
 
                 # パーセンタイル追加
                 pool_vals = df_filt[col_r].dropna()
-                df_top["Percentile"] = df_top[col_r].apply(
-                    lambda v: f"Top {100-int((pool_vals<=v).mean()*100)}%"
-                )
+                if sort_asc:
+                    # 低い順: 最小値がTop 1%
+                    df_top["Percentile"] = df_top[col_r].apply(
+                        lambda v: f"Top {int((pool_vals>=v).mean()*100)+1}%"
+                    )
+                else:
+                    df_top["Percentile"] = df_top[col_r].apply(
+                        lambda v: f"Top {100-int((pool_vals<=v).mean()*100)}%"
+                    )
                 pos_color = {"GK":"#F59E0B","DEF":"#3B82F6","MID":"#8B5CF6","FWD":"#EF4444"}
                 def pos_style(v):
                     c = pos_color.get(v,"#6b7280")
