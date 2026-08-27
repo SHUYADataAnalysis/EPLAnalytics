@@ -177,6 +177,9 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
             "Possession % ⚡":   "poss_avg",
         }
 
+        # 低い方が良い指標は符号を反転して表示
+        INVERT = {"xGC", "Shots on Tgt Ag ⚡"}
+
         for label in metrics:
             col = col_map.get(label)
             if not col or col not in sub.columns:
@@ -188,6 +191,8 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
                 continue
             try:
                 r_val, _ = pearsonr(vals, sub["final_pts"])
+                if label in INVERT:
+                    r_val = -r_val  # 低いほど良い指標は符号反転
                 row[label] = round(r_val, 4)
             except Exception:
                 row[label] = np.nan
@@ -295,17 +300,20 @@ if not selected_metrics:
 
 # 相関係数計算
 with st.spinner("相関係数を計算中..."):
+    season_dfs = {}
+    for s in selected_seasons:
+        _dg  = dg_all[dg_all["season"] == s]
+        _apf = apf_all[apf_all["season"] == s] if has_apf else pd.DataFrame()
+        _df  = build_correlation_curve(_dg, _apf, selected_metrics)
+        season_dfs[s] = _df
+
     if len(selected_seasons) == 1:
-        df_corr = build_correlation_curve(dg_all, apf_all, selected_metrics)
+        df_corr = list(season_dfs.values())[0]
+        df_std  = None
     else:
-        # 複数シーズン: 各シーズンで計算して平均
-        dfs = []
-        for s in selected_seasons:
-            _dg = dg_all[dg_all["season"] == s]
-            _apf = apf_all[apf_all["season"] == s] if has_apf else pd.DataFrame()
-            _df = build_correlation_curve(_dg, _apf, selected_metrics)
-            dfs.append(_df)
-        df_corr = pd.concat(dfs).groupby("GW")[selected_metrics].mean().reset_index()
+        all_df = pd.concat(season_dfs.values())
+        df_corr = all_df.groupby("GW")[selected_metrics].mean().reset_index()
+        df_std  = all_df.groupby("GW")[selected_metrics].std().reset_index()
 
 # GW範囲フィルタ
 df_plot = df_corr[df_corr["GW"].between(gw_range[0], gw_range[1])]
@@ -323,21 +331,36 @@ with tab_line:
                "#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#64748b","#a855f7"]
     STYLES = ["-","--","-.",":",(0,(3,1,1,1))]*3
 
+    show_errbar = st.sidebar.toggle("シーズン間のばらつき（エラーバー）を表示",
+                                       value=len(selected_seasons) > 1,
+                                       key="show_err",
+                                       help="複数シーズン選択時にシーズン間の標準偏差を帯で表示します")
+    df_std_plot = df_std[df_std["GW"].between(gw_range[0], gw_range[1])] if df_std is not None else None
+
     for i, metric in enumerate(selected_metrics):
         if metric not in df_plot.columns:
             continue
         vals = df_plot[metric]
         if show_r2:
             vals = vals ** 2
+        color = COLORS[i % len(COLORS)]
         ax.plot(df_plot["GW"], vals,
-                color=COLORS[i % len(COLORS)],
+                color=color,
                 ls=STYLES[i % len(STYLES)],
                 lw=2.2, marker="o", markersize=3.5,
                 label=metric, alpha=0.9, zorder=3)
+        # エラーバー（シーズン間標準偏差）
+        if show_errbar and df_std_plot is not None and metric in df_std_plot.columns:
+            std_vals = df_std_plot[metric]
+            if show_r2:
+                std_vals = std_vals * 2 * vals.abs()  # 誤差伝播
+            ax.fill_between(df_plot["GW"],
+                            vals - std_vals, vals + std_vals,
+                            color=color, alpha=0.12, zorder=2)
 
     # 縦線
     if show_highlight:
-        for gw_mark, label in [(5,"GW5"),(10,"GW10"),(19,"前半戦終了")]:
+        for gw_mark, label in [(5,"GW5"),(10,"GW10"),(19,"Half Season")]:
             if gw_range[0] <= gw_mark <= gw_range[1]:
                 ax.axvline(gw_mark, color="#64748b", lw=1, ls=":", alpha=0.7)
                 ax.text(gw_mark+0.2, ax.get_ylim()[0]+0.01, label,
@@ -347,10 +370,10 @@ with tab_line:
     ax.text(gw_range[0], 0.71, "r = 0.70", fontsize=7.5, color="#999999")
 
     y_label = "R²（決定係数）" if show_r2 else "Pearson r（相関係数）"
-    ax.set_xlabel("GW（節）", color="#333333", fontsize=11)
+    ax.set_xlabel("Gameweek (GW)", color="#333333", fontsize=11)
     ax.set_ylabel(y_label, color="#333333", fontsize=11)
     seasons_label = " + ".join(selected_seasons)
-    ax.set_title(f"N節時点の累積指標 vs 最終勝ち点  [{seasons_label}]",
+    ax.set_title(f"Cumulative metric vs Final Points  [{seasons_label}]",
                  color="#1a1a2e", fontweight="bold", fontsize=12)
     ax.tick_params(colors="#333333")
     for spine in ax.spines.values():
@@ -361,10 +384,11 @@ with tab_line:
     plt.tight_layout()
     st.pyplot(fig, use_container_width=True)
 
-    st.caption(
-        "縦軸: N節時点の累積値と最終勝ち点のPearson r（1に近いほど強い相関）。"
-        "外れ値に強い Spearman ρ を見たい場合はテーブルタブを参照。"
-    )
+    note = "縦軸: N節時点の累積値と最終勝ち点のPearson r (1 = perfect positive correlation)."
+    if df_std_plot is not None:
+        note += " Shaded area = ±1 SD across seasons."
+    note += " xGC & Shots on Tgt Ag are sign-inverted (lower = better → shown as positive correlation)."
+    st.caption(note)
 
 with tab_table:
     # Spearman rも追加
