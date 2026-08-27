@@ -1789,7 +1789,13 @@ st.markdown(
     " (github.com/vaastav/Fantasy-Premier-League)"
     " · FPL data © Premier League · Non-commercial personal use only"
     "</span><br>"
-    "<span style='color:#64748b !important;font-size:.68rem'>"
+    "<span style='color:#94a3b8 !important;font-size:.70rem'>"
+    "Match stats (shots, possession, etc.): "
+    "<b style='color:#e2e8f0'>API-Football</b>"
+    " (api-football.com)"
+    " · Data rights belong to respective rights holders"
+    "</span><br>"
+    "<span style='color:#64748b !important;font-size:.66rem'>"
     "Built with Streamlit · Python · NumPy · Pandas"
     "</span></div>",
     unsafe_allow_html=True
