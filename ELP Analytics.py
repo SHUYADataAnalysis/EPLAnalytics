@@ -893,8 +893,9 @@ if "Team" in page:
     all_metric_labels = list(TEAM_METRICS.keys())
     metric_cols = {v[0]: k for k, v in TEAM_METRICS.items()}
 
-    tab_overview, tab_radar, tab_scatter, tab_pca, tab_custom = st.tabs([
+    tab_overview, tab_rank_t, tab_radar, tab_scatter, tab_pca, tab_custom = st.tabs([
         "📋 Available Metrics",
+        "🏆 Rankings",
         "🕸️ Radar",
         "⊕ 2-Axis Plot",
         "📐 PCA",
@@ -941,6 +942,80 @@ if "Team" in page:
             st.dataframe(df_cat, use_container_width=True, hide_index=True)
 
     # ── Tab 1: Radar ─────────────────────────────────────────────────────────
+    with tab_rank_t:
+        st.markdown("## Team Rankings")
+        st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
+
+        col_ra, col_rb = st.columns([1, 3])
+        with col_ra:
+            rank_metric_t = st.selectbox("指標を選択", all_metric_labels, key="t_rank_metric",
+                                          index=all_metric_labels.index("Points") if "Points" in all_metric_labels else 0)
+            _t_low_is_good = {
+                "goals_conceded","ga_per_match","xGC","xGC_per_match",
+                "yellow_cards","red_cards","losses","fouls_pm","offsides_pm",
+                "goal_luck","def_luck",
+            }
+            _t_raw = TEAM_METRICS[rank_metric_t][0]
+            _t_default_asc = _t_raw in _t_low_is_good
+            sort_asc_t = st.toggle("低い順に表示", value=_t_default_asc, key="t_rank_asc",
+                                    help="失点・被xG・イエローカードなど低い方が良い指標に使います")
+            show_n_t   = st.radio("表示数", [10, 15, 20], horizontal=True, key="t_rank_n")
+
+        with col_rb:
+            t_col = TEAM_METRICS[rank_metric_t][0]
+            if t_col not in df_teams.columns:
+                st.warning(f"'{rank_metric_t}' はこのシーズンでは利用できません")
+            else:
+                df_trank = (df_teams[["team_name", t_col]]
+                            .copy()
+                            .sort_values(t_col, ascending=sort_asc_t)
+                            .head(int(show_n_t))
+                            .reset_index(drop=True))
+                df_trank.index += 1
+
+                # パーセンタイル
+                _pool_t = df_teams[t_col].dropna()
+                if sort_asc_t:
+                    df_trank["Percentile"] = df_trank[t_col].apply(
+                        lambda v: f"Bottom {int(((_pool_t <= v).mean())*100)}%"
+                    )
+                else:
+                    df_trank["Percentile"] = df_trank[t_col].apply(
+                        lambda v: f"Top {100 - int((_pool_t <= v).mean()*100)}%"
+                    )
+
+                df_trank_show = df_trank.rename(columns={t_col: rank_metric_t})
+
+                # スタイル
+                try:
+                    styled = df_trank_show.style.background_gradient(
+                        subset=[rank_metric_t], cmap="RdYlGn_r" if sort_asc_t else "RdYlGn"
+                    ).format({rank_metric_t: "{:.3f}"})
+                    st.dataframe(styled, use_container_width=True)
+                except Exception:
+                    st.dataframe(df_trank_show, use_container_width=True)
+
+                # 横棒グラフ
+                fig_tr, ax_tr = plt.subplots(figsize=(7, max(3, len(df_trank) * 0.45)))
+                apply_dark_style(fig_tr, ax_tr)
+                _vals  = df_trank[t_col].values
+                _teams = df_trank["team_name"].values
+                _colors = [tcmap.get(t, "#64748b") for t in _teams]
+                bars = ax_tr.barh(range(len(_teams)), _vals, color=_colors, alpha=0.85, edgecolor="#374151", lw=0.4)
+                ax_tr.set_yticks(range(len(_teams)))
+                ax_tr.set_yticklabels(_teams, fontsize=10, color="#e2e8f0")
+                ax_tr.set_xlabel(rank_metric_t, color="#94a3b8")
+                ax_tr.set_title(f"{rank_metric_t} Ranking", color="#e2e8f0", fontweight="bold")
+                if sort_asc_t:
+                    ax_tr.invert_yaxis()
+                else:
+                    ax_tr.invert_yaxis()
+                # 値ラベル
+                for i, (bar, val) in enumerate(zip(bars, _vals)):
+                    ax_tr.text(val, i, f" {val:.2f}", va="center", fontsize=8, color="#e2e8f0")
+                plt.tight_layout()
+                st.pyplot(fig_tr, use_container_width=True)
+
     with tab_radar:
         st.markdown("## Radar Chart — Team Comparison")
         st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
