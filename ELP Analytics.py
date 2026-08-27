@@ -275,8 +275,9 @@ def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.D
     """
     rows = []
     for fid, sides in fixture_cache.items():
-        for side in ["home", "away"]:
+        for side, opp in [("home","away"), ("away","home")]:
             s = sides.get(side, {})
+            o = sides.get(opp, {})
             if not s or not s.get("team_name"):
                 continue
             rows.append({
@@ -290,6 +291,10 @@ def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.D
                 "offsides":         s.get("Offsides"),
                 "passes_total":     s.get("Total passes"),
                 "pass_accuracy":    s.get("Passes %"),
+                # 被シュート（対戦相手の攻撃指標）
+                "shots_against":    o.get("Total Shots"),
+                "shots_on_tgt_ag":  o.get("Shots on Goal"),
+                "shots_inbox_ag":   o.get("Shots insidebox"),
             })
 
     if not rows:
@@ -301,23 +306,27 @@ def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.D
             df_apf[c] = pd.to_numeric(df_apf[c], errors="coerce")
 
     agg = df_apf.groupby("team_name").agg(
-        shots_pm          = ("total_shots",      "mean"),
-        shots_on_tgt_pm   = ("shots_on_target",  "mean"),
-        shots_inbox_pm    = ("shots_inside_box", "mean"),
-        possession        = ("possession_pct",   "mean"),
-        corners_pm        = ("corners",          "mean"),
-        fouls_pm          = ("fouls",            "mean"),
-        offsides_pm       = ("offsides",         "mean"),
-        pass_acc          = ("pass_accuracy",    "mean"),
-        passes_pm         = ("passes_total",     "mean"),
-        n_fixtures        = ("total_shots",      "count"),
+        shots_pm           = ("total_shots",       "mean"),
+        shots_on_tgt_pm    = ("shots_on_target",   "mean"),
+        shots_inbox_pm     = ("shots_inside_box",  "mean"),
+        shots_against_pm   = ("shots_against",     "mean"),
+        shots_on_tgt_ag_pm = ("shots_on_tgt_ag",   "mean"),
+        shots_inbox_ag_pm  = ("shots_inbox_ag",     "mean"),
+        possession         = ("possession_pct",    "mean"),
+        corners_pm         = ("corners",           "mean"),
+        fouls_pm           = ("fouls",             "mean"),
+        offsides_pm        = ("offsides",          "mean"),
+        pass_acc           = ("pass_accuracy",     "mean"),
+        passes_pm          = ("passes_total",      "mean"),
+        n_fixtures         = ("total_shots",       "count"),
     ).reset_index()
 
-    # 決定率
     merged = df_teams.merge(agg, on="team_name", how="left")
-    merged["shot_conversion"] = (
-        merged["gf_per_match"] / merged["shots_pm"].replace(0, np.nan) * 100
-    ).round(1)
+
+    # 計算指標
+    merged["shot_conversion"]    = (merged["gf_per_match"] / merged["shots_pm"].replace(0, np.nan) * 100).round(1)
+    merged["shots_on_tgt_rate"]  = (merged["shots_on_tgt_pm"] / merged["shots_pm"].replace(0, np.nan) * 100).round(1)
+    merged["shots_on_tgt_ag_rate"] = (merged["shots_on_tgt_ag_pm"] / merged["shots_against_pm"].replace(0, np.nan) * 100).round(1)
     return merged
 
 def _get(url, timeout=30):
@@ -882,7 +891,12 @@ if "Team" in page:
     "Shots/Match ⚡":     ("shots_pm",        "Total shots per match (API-Football)", "Attack⚡"),
     "Shots on Target/M ⚡":("shots_on_tgt_pm","Shots on target per match",            "Attack⚡"),
     "Shots in Box/M ⚡":  ("shots_inbox_pm",  "Shots inside box per match",           "Attack⚡"),
-    "Shot Conversion % ⚡":("shot_conversion", "Goals / Shots × 100",                 "Attack⚡"),
+    "Shot Conversion % ⚡":  ("shot_conversion",      "Goals / Shots × 100",                    "Attack⚡"),
+    "Shots on Tgt Rate % ⚡": ("shots_on_tgt_rate",   "Shots on target / Total shots × 100",    "Attack⚡"),
+    "Shots Against/M ⚡":     ("shots_against_pm",     "Shots conceded per match",                "Defense⚡"),
+    "Shots on Tgt Ag/M ⚡":   ("shots_on_tgt_ag_pm",  "On-target shots conceded per match",      "Defense⚡"),
+    "Shots in Box Ag/M ⚡":   ("shots_inbox_ag_pm",   "Inside-box shots conceded per match",     "Defense⚡"),
+    "Shots on Tgt Ag Rate% ⚡":("shots_on_tgt_ag_rate","Opponent shots on target rate (%) ",     "Defense⚡"),
     "Possession % ⚡":    ("possession",       "Average ball possession (%)",          "Attack⚡"),
     "Corners/Match ⚡":   ("corners_pm",       "Corners per match",                   "Attack⚡"),
     "Fouls/Match ⚡":     ("fouls_pm",         "Fouls committed per match",           "Discipline⚡"),
