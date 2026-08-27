@@ -267,6 +267,60 @@ def _normalize_team_name(name: str) -> str:
     return APF_TEAM_NAME_MAP.get(name, name)
 
 
+def build_team_timeseries(dg_raw, team_id_map: dict) -> "pd.DataFrame":
+    """
+    GW×チームの時系列データを構築。
+    各GWの試合値と累積値を両方持つ。
+    """
+    dg = dg_raw.copy()
+    for c in ["expected_goals","expected_goals_conceded","goals_scored","goals_conceded",
+               "yellow_cards","red_cards","assists","saves","clean_sheets","bonus",
+               "creativity","threat","influence","ict_index",
+               "tackles","recoveries","clearances_blocks_interceptions","defensive_contribution"]:
+        if c in dg.columns:
+            dg[c] = pd.to_numeric(dg[c], errors="coerce").fillna(0)
+    dg["was_home"] = dg["was_home"].fillna(False).astype(bool)
+    dg["gf"] = np.where(dg["was_home"],
+                         pd.to_numeric(dg["team_h_score"], errors="coerce"),
+                         pd.to_numeric(dg["team_a_score"], errors="coerce"))
+    dg["ga"] = np.where(dg["was_home"],
+                         pd.to_numeric(dg["team_a_score"], errors="coerce"),
+                         pd.to_numeric(dg["team_h_score"], errors="coerce"))
+    dg["pts"] = np.where(dg["gf"] > dg["ga"], 3,
+                np.where(dg["gf"] == dg["ga"], 1, 0))
+
+    # team列の型を確認してname_mapを使う
+    if "team" in dg.columns and dg["team"].dtype != object:
+        dg["team_name"] = dg["team"].map(team_id_map).fillna("Unknown")
+    else:
+        dg["team_name"] = dg["team"] if "team" in dg.columns else "Unknown"
+
+    _agg_cols = {c: "sum" for c in
+                 ["expected_goals","expected_goals_conceded","goals_scored","goals_conceded",
+                  "yellow_cards","red_cards","assists","saves","clean_sheets","bonus",
+                  "creativity","threat","influence","ict_index",
+                  "tackles","recoveries","clearances_blocks_interceptions","defensive_contribution"]
+                 if c in dg.columns}
+    _agg_cols.update({"gf": "first", "ga": "first", "pts": "first"})
+
+    ts = dg.groupby(["team_name", "GW", "fixture"]).agg(**{k: (k, v) for k, v in _agg_cols.items()}).reset_index()
+    ts = ts.rename(columns={
+        "expected_goals": "xG", "expected_goals_conceded": "xGC",
+        "goals_scored": "goals_for_sum", "goals_conceded": "goals_ag_sum",
+        "clearances_blocks_interceptions": "cbi",
+        "defensive_contribution": "def_contribution",
+    })
+    ts = ts.sort_values(["team_name", "GW"]).reset_index(drop=True)
+
+    # 累積列を追加
+    cum_cols = ["xG","xGC","pts","gf","ga","yellow_cards","creativity","threat","influence"]
+    for col in cum_cols:
+        if col in ts.columns:
+            ts[f"{col}_cum"] = ts.groupby("team_name")[col].cumsum()
+
+    return ts
+
+
 def build_apf_team_stats(fixture_cache: dict, df_teams: "pd.DataFrame") -> "pd.DataFrame":
     """
     fixture_cache からチームごとにシュート・ポゼッション等を集計し
@@ -766,6 +820,7 @@ if df_t_raw is not None and "id" in df_t_raw.columns and "name" in df_t_raw.colu
 
 df_players  = prep_players(df_p_raw, team_id_map)
 df_teams    = build_team_stats(df_g_raw, team_id_map)
+df_ts       = build_team_timeseries(df_g_raw, team_id_map)
 
 # API-Football データ: 事前取得済みJSONをGitHubから読み込む
 # データ取得方法: fetch_api_stats.py を参照
@@ -907,9 +962,10 @@ if "Team" in page:
     all_metric_labels = list(TEAM_METRICS.keys())
     metric_cols = {v[0]: k for k, v in TEAM_METRICS.items()}
 
-    tab_overview, tab_rank_t, tab_radar, tab_scatter, tab_pca, tab_custom = st.tabs([
+    tab_overview, tab_rank_t, tab_trend, tab_radar, tab_scatter, tab_pca, tab_custom = st.tabs([
         "📋 Available Metrics",
         "🏆 Rankings",
+        "📈 Time Series",
         "🕸️ Radar",
         "⊕ 2-Axis Plot",
         "📐 PCA",
@@ -1011,24 +1067,131 @@ if "Team" in page:
 
                 # 横棒グラフ
                 fig_tr, ax_tr = plt.subplots(figsize=(7, max(3, len(df_trank) * 0.45)))
-                apply_dark_style(fig_tr, ax_tr)
+                fig_tr.patch.set_facecolor("#ffffff")
+                ax_tr.set_facecolor("#f8f9fa")
+                ax_tr.grid(axis="x", color="#e0e0e0", lw=0.6, zorder=0)
                 _vals  = df_trank[t_col].values
                 _teams = df_trank["team_name"].values
                 _colors = [tcmap.get(t, "#64748b") for t in _teams]
                 bars = ax_tr.barh(range(len(_teams)), _vals, color=_colors, alpha=0.85, edgecolor="#374151", lw=0.4)
                 ax_tr.set_yticks(range(len(_teams)))
-                ax_tr.set_yticklabels(_teams, fontsize=10, color="#e2e8f0")
-                ax_tr.set_xlabel(rank_metric_t, color="#94a3b8")
-                ax_tr.set_title(f"{rank_metric_t} Ranking", color="#e2e8f0", fontweight="bold")
-                if sort_asc_t:
-                    ax_tr.invert_yaxis()
-                else:
-                    ax_tr.invert_yaxis()
+                ax_tr.set_yticklabels(_teams, fontsize=10, color="#1a1a2e")
+                ax_tr.set_xlabel(rank_metric_t, color="#333333")
+                ax_tr.set_title(f"{rank_metric_t} Ranking", color="#1a1a2e", fontweight="bold")
+                ax_tr.tick_params(colors="#333333")
+                ax_tr.spines["bottom"].set_color("#cccccc")
+                ax_tr.spines["left"].set_color("#cccccc")
+                ax_tr.invert_yaxis()
                 # 値ラベル
                 for i, (bar, val) in enumerate(zip(bars, _vals)):
-                    ax_tr.text(val, i, f" {val:.2f}", va="center", fontsize=8, color="#e2e8f0")
+                    ax_tr.text(val, i, f" {val:.2f}", va="center", fontsize=8, color="#1a1a2e")
                 plt.tight_layout()
                 st.pyplot(fig_tr, use_container_width=True)
+
+    with tab_trend:
+        st.markdown("## Time Series")
+        st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
+
+        # 指標定義（時系列で使える指標のみ）
+        TS_METRICS = {
+            "xG (per match)":         ("xG",            False),
+            "xGC (per match)":        ("xGC",           False),
+            "Goals (per match)":      ("gf",            False),
+            "Goals Conceded (pm)":    ("ga",            False),
+            "Points (per match)":     ("pts",           False),
+            "Yellow Cards (pm)":      ("yellow_cards",  False),
+            "Creativity (pm)":        ("creativity",    False),
+            "Threat (pm)":            ("threat",        False),
+            "Influence (pm)":         ("influence",     False),
+            "xG (cumulative)":        ("xG_cum",        True),
+            "xGC (cumulative)":       ("xGC_cum",       True),
+            "Goals (cumulative)":     ("gf_cum",        True),
+            "Points (cumulative)":    ("pts_cum",       True),
+            "Creativity (cumulative)":("creativity_cum",True),
+            "Threat (cumulative)":    ("threat_cum",    True),
+        }
+
+        col_ta, col_tb = st.columns([1, 3])
+        with col_ta:
+            ts_metric   = st.selectbox("指標", list(TS_METRICS.keys()),
+                                        index=list(TS_METRICS.keys()).index("Points (cumulative)"),
+                                        key="ts_metric")
+            ts_teams    = st.multiselect("チームを選択（空 = 全チーム）",
+                                          sorted(df_ts["team_name"].unique().tolist()),
+                                          key="ts_teams")
+            ts_ma       = st.slider("移動平均（試合数、1=なし）", 1, 5, 1, key="ts_ma",
+                                     help="直近N試合の平均を表示します（累積指標には不要）")
+            ts_show_avg = st.toggle("リーグ平均を表示", value=True, key="ts_avg")
+
+        with col_tb:
+            ts_col, ts_is_cum = TS_METRICS[ts_metric]
+            if ts_col not in df_ts.columns:
+                st.warning(f"'{ts_metric}' はこのシーズンでは利用できません")
+            else:
+                _df_plot = df_ts.copy()
+                if ts_teams:
+                    _df_plot = _df_plot[_df_plot["team_name"].isin(ts_teams)]
+
+                # 移動平均（累積指標には適用しない）
+                if ts_ma > 1 and not ts_is_cum:
+                    _df_plot = _df_plot.copy()
+                    _df_plot[ts_col] = (
+                        _df_plot.groupby("team_name")[ts_col]
+                        .transform(lambda x: x.rolling(ts_ma, min_periods=1).mean())
+                    )
+
+                # GW単位に集約（1GW複数試合の場合も想定）
+                _df_gw = (_df_plot.groupby(["team_name","GW"])[ts_col]
+                          .sum().reset_index() if not ts_is_cum
+                          else _df_plot.groupby(["team_name","GW"])[ts_col]
+                          .last().reset_index())
+
+                fig_ts, ax_ts = plt.subplots(figsize=(9, 5))
+                fig_ts.patch.set_facecolor("#ffffff")
+                ax_ts.set_facecolor("#f8f9fa")
+                ax_ts.grid(axis="both", color="#e0e0e0", lw=0.5, zorder=0)
+
+                # チームごとに折れ線
+                _all_teams = _df_gw["team_name"].unique()
+                for tn in sorted(_all_teams):
+                    _td = _df_gw[_df_gw["team_name"] == tn].sort_values("GW")
+                    _c  = tcmap.get(tn, "#64748b")
+                    ax_ts.plot(_td["GW"], _td[ts_col],
+                               color=_c, lw=1.8, marker="o", markersize=3,
+                               label=tn, alpha=0.85, zorder=3)
+
+                # リーグ平均
+                if ts_show_avg:
+                    _avg = df_ts.groupby("GW")[ts_col].mean() if not ts_is_cum                            else df_ts.groupby(["team_name","GW"])[ts_col].last().reset_index().groupby("GW")[ts_col].mean()
+                    ax_ts.plot(_avg.index, _avg.values,
+                               color="#666666", lw=2, ls="--",
+                               label="League Avg", alpha=0.7, zorder=4)
+
+                ax_ts.set_xlabel("GW（節）", color="#333333", fontsize=10)
+                ax_ts.set_ylabel(ts_metric, color="#333333", fontsize=10)
+                ax_ts.set_title(ts_metric, color="#1a1a2e", fontweight="bold", fontsize=12)
+                ax_ts.tick_params(colors="#333333")
+                for spine in ax_ts.spines.values():
+                    spine.set_color("#cccccc")
+
+                # 凡例（チーム数が多い場合は右外に）
+                _n_teams = len(_all_teams)
+                if _n_teams <= 6:
+                    ax_ts.legend(fontsize=8, facecolor="#ffffff",
+                                 edgecolor="#cccccc", labelcolor="#1a1a2e")
+                elif _n_teams <= 12:
+                    ax_ts.legend(fontsize=7, facecolor="#ffffff", edgecolor="#cccccc",
+                                 labelcolor="#1a1a2e", bbox_to_anchor=(1.01,1),
+                                 loc="upper left", ncol=1)
+                else:
+                    ax_ts.legend(fontsize=6.5, facecolor="#ffffff", edgecolor="#cccccc",
+                                 labelcolor="#1a1a2e", bbox_to_anchor=(1.01,1),
+                                 loc="upper left", ncol=2)
+
+                plt.tight_layout()
+                st.pyplot(fig_ts, use_container_width=True)
+                _ma_note = f"（{ts_ma}試合移動平均）" if ts_ma > 1 and not ts_is_cum else ""
+                st.caption(f"横軸 = GW（節）　縦軸 = {ts_metric}{_ma_note}　破線 = リーグ平均")
 
     with tab_radar:
         st.markdown("## Radar Chart — Team Comparison")
