@@ -85,13 +85,8 @@ def load_vaastav(season_str: str) -> pd.DataFrame | None:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_apf(season_str: str) -> pd.DataFrame:
+def load_apf(season_str: str, repo_user: str, repo_name: str) -> pd.DataFrame:
     """API-Football JSONを読み込み GW×チームに変換"""
-    try:
-        repo_user = st.secrets.get("GITHUB_USER", "")
-        repo_name = st.secrets.get("GITHUB_REPO", "")
-    except Exception:
-        return pd.DataFrame()
     if not repo_user or not repo_name:
         return pd.DataFrame()
     url = (f"https://raw.githubusercontent.com/{repo_user}/{repo_name}"
@@ -216,6 +211,18 @@ st.markdown("""
 
 # サイドバー
 st.sidebar.markdown("### 設定")
+# デバッグ情報
+_debug_user = ""
+_debug_repo = ""
+try:
+    _debug_user = st.secrets.get("GITHUB_USER", "未設定")
+    _debug_repo = st.secrets.get("GITHUB_REPO", "未設定")
+except Exception:
+    _debug_user = "Secrets読込エラー"
+    _debug_repo = "Secrets読込エラー"
+with st.sidebar.expander("🔧 接続情報", expanded=False):
+    st.caption(f"GITHUB_USER: `{_debug_user}`")
+    st.caption(f"GITHUB_REPO: `{_debug_repo}`")
 selected_seasons = st.sidebar.multiselect(
     "シーズン（複数選択で合算）",
     list(SEASONS.keys()), default=["2024-25"]
@@ -253,7 +260,7 @@ with st.spinner("データを読み込み中..."):
         if dg is not None:
             dg["season"] = s
             all_dg.append(dg)
-        apf = load_apf(s)
+        apf = load_apf(s, _repo_user, _repo_name)
         if not apf.empty:
             apf["season"] = s
             all_apf.append(apf)
