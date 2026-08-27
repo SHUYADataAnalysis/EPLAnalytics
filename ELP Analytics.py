@@ -1228,7 +1228,13 @@ if "Team" in page:
 
                 # リーグ平均
                 if ts_show_avg:
-                    _avg = df_ts.groupby("GW")[ts_col].mean() if not ts_is_cum                            else df_ts.groupby(["team_name","GW"])[ts_col].last().reset_index().groupby("GW")[ts_col].mean()
+                    if ts_src == "apf":
+                        _avg_df = _df_base if ts_col in _df_base.columns else pd.DataFrame()
+                        _avg = _avg_df.groupby("GW")[ts_col].mean() if not _avg_df.empty else pd.Series(dtype=float)
+                    elif ts_is_cum:
+                        _avg = df_ts.groupby(["team_name","GW"])[ts_col].last().reset_index().groupby("GW")[ts_col].mean() if ts_col in df_ts.columns else pd.Series(dtype=float)
+                    else:
+                        _avg = df_ts.groupby("GW")[ts_col].mean() if ts_col in df_ts.columns else pd.Series(dtype=float)
                     ax_ts.plot(_avg.index, _avg.values,
                                color="#666666", lw=2, ls="--",
                                label="League Avg", alpha=0.7, zorder=4)
