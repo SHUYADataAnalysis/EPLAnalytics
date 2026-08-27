@@ -289,11 +289,18 @@ def build_team_timeseries(dg_raw, team_id_map: dict) -> "pd.DataFrame":
     dg["pts"] = np.where(dg["gf"] > dg["ga"], 3,
                 np.where(dg["gf"] == dg["ga"], 1, 0))
 
-    # team列の型を確認してname_mapを使う
-    if "team" in dg.columns and dg["team"].dtype != object:
-        dg["team_name"] = dg["team"].map(team_id_map).fillna("Unknown")
+    # merged_gw.csv の team列はチーム名文字列（vaastav 2025-26以降）
+    # 古いシーズンでは数値IDの場合もあるため両方対応
+    if "team" not in dg.columns:
+        dg["team_name"] = "Unknown"
     else:
-        dg["team_name"] = dg["team"] if "team" in dg.columns else "Unknown"
+        _first = dg["team"].dropna().iloc[0] if len(dg["team"].dropna()) > 0 else 0
+        try:
+            int(_first)  # 数値IDの場合
+            dg["team_name"] = pd.to_numeric(dg["team"], errors="coerce").map(team_id_map).fillna("Unknown")
+        except (ValueError, TypeError):
+            # 既にチーム名文字列の場合はそのまま使う
+            dg["team_name"] = dg["team"].astype(str)
 
     _agg_cols = {c: "sum" for c in
                  ["expected_goals","expected_goals_conceded","goals_scored","goals_conceded",
