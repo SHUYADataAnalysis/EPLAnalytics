@@ -1100,23 +1100,74 @@ if "Team" in page:
         st.markdown("<div class='section-bar'></div>", unsafe_allow_html=True)
 
         # 指標定義（時系列で使える指標のみ）
+        # API-Football の時系列データを構築
+        def _build_apf_ts(apf_json: dict) -> "pd.DataFrame":
+            """api_stats JSONの_metaからGW×チームの時系列を構築"""
+            rows = []
+            for fid, sides in apf_json.items():
+                meta = sides.get("_meta", {})
+                gw   = meta.get("gw", 0)
+                if not gw:
+                    continue
+                for side, opp in [("home","away"), ("away","home")]:
+                    s = sides.get(side, {})
+                    o = sides.get(opp, {})
+                    if not s or not s.get("team_name"):
+                        continue
+                    rows.append({
+                        "team_name":     _normalize_team_name(s["team_name"]),
+                        "GW":            gw,
+                        "shots":         s.get("Total Shots"),
+                        "shots_on_tgt":  s.get("Shots on Goal"),
+                        "shots_inbox":   s.get("Shots insidebox"),
+                        "possession":    s.get("Ball Possession"),
+                        "corners":       s.get("Corner Kicks"),
+                        "fouls":         s.get("Fouls"),
+                        "shots_ag":      o.get("Total Shots"),
+                        "shots_on_tgt_ag": o.get("Shots on Goal"),
+                    })
+            if not rows:
+                return pd.DataFrame()
+            df = pd.DataFrame(rows)
+            for c in df.columns:
+                if c not in ["team_name","GW"]:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            df = df.groupby(["team_name","GW"]).mean(numeric_only=True).reset_index()
+            # 各比率を計算
+            df["shots_on_tgt_rate"] = (df["shots_on_tgt"] / df["shots"].replace(0, np.nan) * 100).round(1)
+            return df
+
+        _apf_ts = _build_apf_ts(_apf_json) if _apf_json else pd.DataFrame()
+        _has_apf_ts = not _apf_ts.empty
+
         TS_METRICS = {
-            "xG (per match)":         ("xG",            False),
-            "xGC (per match)":        ("xGC",           False),
-            "Goals (per match)":      ("gf",            False),
-            "Goals Conceded (pm)":    ("ga",            False),
-            "Points (per match)":     ("pts",           False),
-            "Yellow Cards (pm)":      ("yellow_cards",  False),
-            "Creativity (pm)":        ("creativity",    False),
-            "Threat (pm)":            ("threat",        False),
-            "Influence (pm)":         ("influence",     False),
-            "xG (cumulative)":        ("xG_cum",        True),
-            "xGC (cumulative)":       ("xGC_cum",       True),
-            "Goals (cumulative)":     ("gf_cum",        True),
-            "Points (cumulative)":    ("pts_cum",       True),
-            "Creativity (cumulative)":("creativity_cum",True),
-            "Threat (cumulative)":    ("threat_cum",    True),
+            "xG (per match)":              ("xG",              False, "vaastav"),
+            "xGC (per match)":             ("xGC",             False, "vaastav"),
+            "Goals (per match)":           ("gf",              False, "vaastav"),
+            "Goals Conceded (pm)":         ("ga",              False, "vaastav"),
+            "Points (per match)":          ("pts",             False, "vaastav"),
+            "Yellow Cards (pm)":           ("yellow_cards",    False, "vaastav"),
+            "Creativity (pm)":             ("creativity",      False, "vaastav"),
+            "Threat (pm)":                 ("threat",          False, "vaastav"),
+            "Influence (pm)":              ("influence",       False, "vaastav"),
+            "xG (cumulative)":             ("xG_cum",          True,  "vaastav"),
+            "xGC (cumulative)":            ("xGC_cum",         True,  "vaastav"),
+            "Goals (cumulative)":          ("gf_cum",          True,  "vaastav"),
+            "Points (cumulative)":         ("pts_cum",         True,  "vaastav"),
+            "Creativity (cumulative)":     ("creativity_cum",  True,  "vaastav"),
+            "Threat (cumulative)":         ("threat_cum",      True,  "vaastav"),
+            "Shots/Match ⚡":              ("shots",           False, "apf"),
+            "Shots on Target/M ⚡":        ("shots_on_tgt",    False, "apf"),
+            "Possession % ⚡":             ("possession",      False, "apf"),
+            "Corners/Match ⚡":            ("corners",         False, "apf"),
+            "Fouls/Match ⚡":              ("fouls",           False, "apf"),
+            "Shots Against/M ⚡":          ("shots_ag",        False, "apf"),
+            "Shots on Tgt Ag/M ⚡":        ("shots_on_tgt_ag", False, "apf"),
+            "Shots on Tgt Rate % ⚡":      ("shots_on_tgt_rate",False,"apf"),
         }
+        # APIデータがない場合は⚡指標をリストから除外
+        if not _has_apf_ts:
+            TS_METRICS = {k: v for k, v in TS_METRICS.items() if v[2] != "apf"}
 
         col_ta, col_tb = st.columns([1, 3])
         with col_ta:
@@ -1131,11 +1182,13 @@ if "Team" in page:
             ts_show_avg = st.toggle("リーグ平均を表示", value=True, key="ts_avg")
 
         with col_tb:
-            ts_col, ts_is_cum = TS_METRICS[ts_metric]
-            if ts_col not in df_ts.columns:
-                st.warning(f"'{ts_metric}' はこのシーズンでは利用できません")
+            ts_col, ts_is_cum, ts_src = TS_METRICS[ts_metric]
+            _df_base = _apf_ts if ts_src == "apf" else df_ts
+            if _df_base.empty or ts_col not in _df_base.columns:
+                st.warning(f"'{ts_metric}' はこのシーズンでは利用できません。"
+                           + (" API-Football JSONを再取得してGitHubを更新してください。" if ts_src=="apf" else ""))
             else:
-                _df_plot = df_ts.copy()
+                _df_plot = _df_base.copy()
                 if ts_teams:
                     _df_plot = _df_plot[_df_plot["team_name"].isin(ts_teams)]
 
@@ -1147,11 +1200,17 @@ if "Team" in page:
                         .transform(lambda x: x.rolling(ts_ma, min_periods=1).mean())
                     )
 
-                # GW単位に集約（1GW複数試合の場合も想定）
-                _df_gw = (_df_plot.groupby(["team_name","GW"])[ts_col]
-                          .sum().reset_index() if not ts_is_cum
-                          else _df_plot.groupby(["team_name","GW"])[ts_col]
-                          .last().reset_index())
+                # GW単位に集約
+                if ts_col in _df_plot.columns:
+                    _df_gw = (_df_plot.groupby(["team_name","GW"])[ts_col]
+                              .mean().reset_index() if ts_src == "apf"
+                              else (_df_plot.groupby(["team_name","GW"])[ts_col]
+                                    .sum().reset_index() if not ts_is_cum
+                                    else _df_plot.groupby(["team_name","GW"])[ts_col]
+                                    .last().reset_index()))
+                else:
+                    st.warning(f"列 '{ts_col}' が見つかりません")
+                    st.stop()
 
                 fig_ts, ax_ts = plt.subplots(figsize=(9, 5))
                 fig_ts.patch.set_facecolor("#ffffff")
