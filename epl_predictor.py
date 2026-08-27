@@ -251,6 +251,15 @@ if not selected_metrics:
     st.info("指標を1つ以上選択してください")
     st.stop()
 
+# Secrets読み込み（キャッシュ関数の外で実行）
+_repo_user = ""
+_repo_name = ""
+try:
+    _repo_user = st.secrets.get("GITHUB_USER", "")
+    _repo_name = st.secrets.get("GITHUB_REPO", "")
+except Exception:
+    pass
+
 # データロード
 all_dg  = []
 all_apf = []
