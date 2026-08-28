@@ -79,8 +79,14 @@ def load_vaastav(season_str: str) -> pd.DataFrame | None:
     dg["ga"] = np.where(dg["was_home"],
                          pd.to_numeric(dg["team_a_score"], errors="coerce"),
                          pd.to_numeric(dg["team_h_score"], errors="coerce"))
-    dg["pts"] = np.where(dg["gf"] > dg["ga"], 3,
-                np.where(dg["gf"] == dg["ga"], 1, 0))
+    # fixture単位で勝ち点を計算（選手行の重複を避ける）
+    dg["match_pts"] = np.where(dg["gf"] > dg["ga"], 3,
+                      np.where(dg["gf"] == dg["ga"], 1, 0))
+    # pts列 = fixture単位で一意化した勝ち点（後でgroupby合計するため）
+    # fixture×teamで先頭行のmatch_ptsをptsとして割り当て
+    _fix_pts = dg.groupby(["team","GW","fixture"])["match_pts"].first().reset_index()
+    _fix_pts = _fix_pts.rename(columns={"match_pts":"pts"})
+    dg = dg.merge(_fix_pts[["team","GW","fixture","pts"]], on=["team","GW","fixture"], how="left")
     return dg
 
 
@@ -134,7 +140,9 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
     各GW N において「N節までの累積指標 vs 最終勝ち点」のPearson rを計算。
     Returns: DataFrame(GW, metric1, metric2, ...)
     """
-    final_pts = dg.groupby("team")["pts"].sum().reset_index()
+    # final_pts: fixture単位で勝ち点を集計（選手行の重複を除く）
+    _fix_fp = dg.groupby(["team","GW","fixture"])["pts"].first().reset_index()
+    final_pts = _fix_fp.groupby("team")["pts"].sum().reset_index()
     final_pts.columns = ["team", "final_pts"]
 
     # 順位フィルタ: 最終順位が指定範囲のチームのみ対象
@@ -148,14 +156,21 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
     results = []
     for n in range(1, max_gw + 1):
         row = {"GW": n}
-        sub_v = dg[dg["GW"] <= n].groupby("team").agg(
+        _dg_n = dg[dg["GW"] <= n]
+        sub_v = _dg_n.groupby("team").agg(
             xG_cum   = ("expected_goals",          "sum"),
             xGC_cum  = ("expected_goals_conceded",  "sum"),
-            pts_cum  = ("pts",                      "sum"),
-            gf_cum   = ("gf",                       "sum"),
             cre_cum  = ("creativity",               "sum"),
             thr_cum  = ("threat",                   "sum"),
         ).reset_index()
+        # 勝ち点・得失点はfixture単位で集計（選手行の重複を除く）
+        _fix_agg = _dg_n.groupby(["team","GW","fixture"]).agg(
+            pts=("pts","first"), gf=("gf","first")
+        ).reset_index()
+        _pts_agg = _fix_agg.groupby("team").agg(
+            pts_cum=("pts","sum"), gf_cum=("gf","sum")
+        ).reset_index()
+        sub_v = sub_v.merge(_pts_agg, on="team", how="left")
 
         sub_v["net_xG_cum"] = sub_v["xG_cum"] - sub_v["xGC_cum"]
         sub = sub_v.merge(final_pts, on="team")
@@ -451,17 +466,24 @@ with tab_scatter_tab:
         _apf_sc = apf_all[apf_all["season"] == sc_season] if has_apf else pd.DataFrame()
 
         # N節時点の累積値を計算
-        _sub_v = _dg_sc[_dg_sc["GW"] <= sc_gw].groupby("team").agg(
+        _dg_sc_n = _dg_sc[_dg_sc["GW"] <= sc_gw]
+        _sub_v = _dg_sc_n.groupby("team").agg(
             xG_cum    = ("expected_goals",         "sum"),
             xGC_cum   = ("expected_goals_conceded", "sum"),
-            pts_cum   = ("pts",                    "sum"),
-            gf_cum    = ("gf",                     "sum"),
             cre_cum   = ("creativity",             "sum"),
             thr_cum   = ("threat",                 "sum"),
         ).reset_index()
+        _fix_agg_sc = _dg_sc_n.groupby(["team","GW","fixture"]).agg(
+            pts=("pts","first"), gf=("gf","first")
+        ).reset_index()
+        _pts_agg_sc = _fix_agg_sc.groupby("team").agg(
+            pts_cum=("pts","sum"), gf_cum=("gf","sum")
+        ).reset_index()
+        _sub_v = _sub_v.merge(_pts_agg_sc, on="team", how="left")
         _sub_v["net_xG_cum"] = _sub_v["xG_cum"] - _sub_v["xGC_cum"]
 
-        _fp_sc = _dg_sc.groupby("team")["pts"].sum().reset_index()
+        _fix_fp_sc = _dg_sc.groupby(["team","GW","fixture"])["pts"].first().reset_index()
+        _fp_sc = _fix_fp_sc.groupby("team")["pts"].sum().reset_index()
         _fp_sc.columns = ["team", "final_pts"]
         _sub_v = _sub_v.merge(_fp_sc, on="team")
 
