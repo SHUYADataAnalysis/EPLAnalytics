@@ -772,10 +772,15 @@ if _gw_col:
     _gw_vals = sorted(df_g_raw[_gw_col].dropna().unique().astype(int))
     _gw_min, _gw_max = int(min(_gw_vals)), int(max(_gw_vals))
     st.sidebar.markdown("**GW範囲フィルター**")
-    _gw_range = st.sidebar.slider(
-        "節（GW）", _gw_min, _gw_max, (_gw_min, _gw_max),
-        help=f"取得済みGW: {_gw_min}〜{_gw_max}節。範囲を絞ると指定期間のデータのみで集計します。"
-    )
+    if _gw_min == _gw_max:
+        # GWが1節のみの場合はスライダーを表示しない
+        st.sidebar.caption(f"取得済みGW: {_gw_min}節のみ")
+        _gw_range = (_gw_min, _gw_max)
+    else:
+        _gw_range = st.sidebar.slider(
+            "節（GW）", _gw_min, _gw_max, (_gw_min, _gw_max),
+            help=f"取得済みGW: {_gw_min}〜{_gw_max}節。範囲を絞ると指定期間のデータのみで集計します。"
+        )
     if _gw_range != (_gw_min, _gw_max):
         df_g_raw = df_g_raw[
             df_g_raw[_gw_col].between(_gw_range[0], _gw_range[1])
