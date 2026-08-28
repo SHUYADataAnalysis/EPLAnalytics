@@ -128,13 +128,21 @@ def load_apf(season_str: str, repo_user: str, repo_name: str) -> pd.DataFrame:
 
 
 def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
-                              metrics: list[str]) -> pd.DataFrame:
+                              metrics: list[str],
+                              rank_filter: tuple | None = None) -> pd.DataFrame:
     """
     各GW N において「N節までの累積指標 vs 最終勝ち点」のPearson rを計算。
     Returns: DataFrame(GW, metric1, metric2, ...)
     """
     final_pts = dg.groupby("team")["pts"].sum().reset_index()
     final_pts.columns = ["team", "final_pts"]
+
+    # 順位フィルタ: 最終順位が指定範囲のチームのみ対象
+    if rank_filter is not None:
+        final_pts = final_pts.sort_values("final_pts", ascending=False).reset_index(drop=True)
+        final_pts["rank"] = final_pts.index + 1
+        lo, hi = rank_filter
+        final_pts = final_pts[final_pts["rank"].between(lo, hi)]
 
     max_gw = int(dg["GW"].max())
     results = []
@@ -149,6 +157,7 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
             thr_cum  = ("threat",                   "sum"),
         ).reset_index()
 
+        sub_v["net_xG_cum"] = sub_v["xG_cum"] - sub_v["xGC_cum"]
         sub = sub_v.merge(final_pts, on="team")
         if not df_apf.empty:
             sub_a = df_apf[df_apf["GW"] <= n].groupby("team").agg(
@@ -166,6 +175,7 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
         col_map = {
             "xG":               "xG_cum",
             "xGC":              "xGC_cum",
+            "Net xG (xG-xGC)":  "net_xG_cum",
             "Goals":            "gf_cum",
             "Points (running)": "pts_cum",
             "Creativity":       "cre_cum",
@@ -234,7 +244,7 @@ selected_seasons = st.sidebar.multiselect(
 )
 
 ALL_METRICS = [
-    "xG", "xGC", "Goals", "Points (running)", "Creativity", "Threat",
+    "xG", "xGC", "Net xG (xG-xGC)", "Goals", "Points (running)", "Creativity", "Threat",
     "Shots on Target ⚡", "Total Shots ⚡", "Shots in Box ⚡",
     "Shots on Tgt Ag ⚡", "Possession % ⚡",
 ]
@@ -245,6 +255,23 @@ selected_metrics = st.sidebar.multiselect(
 )
 
 gw_range = st.sidebar.slider("表示するGW範囲", 1, 38, (1, 38))
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**チームグループ絞り込み**")
+group_mode = st.sidebar.radio(
+    "対象チーム",
+    ["全20チーム", "最終順位で絞り込み"],
+    key="group_mode"
+)
+_rank_filter = None
+if group_mode == "最終順位で絞り込み":
+    rank_range = st.sidebar.slider("最終順位の範囲", 1, 20, (1, 5))
+    _rank_filter = tuple(rank_range)
+    st.sidebar.caption(
+        f"※ 対象: 最終順位 {rank_range[0]}〜{rank_range[1]}位のチーム"
+        f"（{len(selected_seasons)}シーズン × {rank_range[1]-rank_range[0]+1}チーム"
+        f" = 最大{len(selected_seasons)*(rank_range[1]-rank_range[0]+1)}サンプル）"
+    )
 
 show_highlight = st.sidebar.toggle("GW5・GW10・GW19 に縦線を表示", value=True)
 show_r2        = st.sidebar.toggle("R²（決定係数）も表示", value=False)
@@ -304,7 +331,7 @@ with st.spinner("相関係数を計算中..."):
     for s in selected_seasons:
         _dg  = dg_all[dg_all["season"] == s]
         _apf = apf_all[apf_all["season"] == s] if has_apf else pd.DataFrame()
-        _df  = build_correlation_curve(_dg, _apf, selected_metrics)
+        _df  = build_correlation_curve(_dg, _apf, selected_metrics, rank_filter=_rank_filter)
         season_dfs[s] = _df
 
     if len(selected_seasons) == 1:
