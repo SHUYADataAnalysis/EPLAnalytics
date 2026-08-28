@@ -169,8 +169,8 @@ def build_correlation_curve(dg: pd.DataFrame, df_apf: pd.DataFrame,
             ).reset_index()
             sub = sub.merge(sub_a, on="team", how="left")
 
-        if len(sub) < 10:
-            continue
+        if len(sub) < 3:
+            continue  # pearsonr には最低3サンプル必要
 
         col_map = {
             "xG":               "xG_cum",
@@ -343,7 +343,18 @@ with st.spinner("相関係数を計算中..."):
         df_std  = all_df.groupby("GW")[selected_metrics].std().reset_index()
 
 # GW範囲フィルタ
+if df_corr.empty or "GW" not in df_corr.columns:
+    st.warning(
+        "相関係数を計算できませんでした。"
+        "チームの絞り込みが厳しすぎる（サンプル数不足）か、"
+        "選択したシーズンにデータがない可能性があります。"
+        "シーズンを追加するか、順位範囲を広げてください。"
+    )
+    st.stop()
 df_plot = df_corr[df_corr["GW"].between(gw_range[0], gw_range[1])]
+if df_plot.empty:
+    st.warning("選択したGW範囲にデータがありません。")
+    st.stop()
 
 # メインタブ
 tab_line, tab_table, tab_note = st.tabs(["📈 相関係数推移", "📊 数値テーブル", "📖 読み方"])
@@ -396,7 +407,7 @@ with tab_line:
     ax.axhline(0.7, color="#cccccc", lw=0.7, ls="--")
     ax.text(gw_range[0], 0.71, "r = 0.70", fontsize=7.5, color="#999999")
 
-    y_label = "R²（決定係数）" if show_r2 else "Pearson r（相関係数）"
+    y_label = "R2 (Coefficient of determination)" if show_r2 else "Pearson r (correlation with final points)"
     ax.set_xlabel("Gameweek (GW)", color="#333333", fontsize=11)
     ax.set_ylabel(y_label, color="#333333", fontsize=11)
     seasons_label = " + ".join(selected_seasons)
