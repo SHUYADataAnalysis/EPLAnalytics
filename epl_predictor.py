@@ -264,6 +264,7 @@ group_mode = st.sidebar.radio(
     key="group_mode"
 )
 _rank_filter = None
+rank_range = (1, 20)  # デフォルト（全チーム）
 if group_mode == "最終順位で絞り込み":
     rank_range = st.sidebar.slider("最終順位の範囲", 1, 20, (1, 5))
     _rank_filter = tuple(rank_range)
@@ -357,7 +358,7 @@ if df_plot.empty:
     st.stop()
 
 # メインタブ
-tab_line, tab_table, tab_note = st.tabs(["📈 相関係数推移", "📊 数値テーブル", "📖 読み方"])
+tab_line, tab_scatter_tab, tab_table, tab_note = st.tabs(["📈 相関係数推移", "⊕ 2-Axis Plot", "📊 数値テーブル", "📖 読み方"])
 
 with tab_line:
     fig, ax = plt.subplots(figsize=(10, 5.5))
@@ -427,6 +428,148 @@ with tab_line:
         note += " Shaded area = ±1 SD across seasons."
     note += " xGC & Shots on Tgt Ag are sign-inverted (lower = better → shown as positive correlation)."
     st.caption(note)
+
+with tab_scatter_tab:
+    st.markdown("#### 2-Axis Plot — N節時点の指標 vs 最終勝ち点")
+    st.caption("横軸: 選んだ指標のN節時点累積値  縦軸: 最終勝ち点  回帰直線・相関係数を表示")
+
+    col_sc1, col_sc2 = st.columns([1, 3])
+    with col_sc1:
+        sc_gw    = st.slider("N節時点", 1, 38, 10, key="sc_gw")
+        sc_metric = st.selectbox("指標", ALL_METRICS, key="sc_metric",
+                                  index=ALL_METRICS.index("Shots on Target ⚡") if "Shots on Target ⚡" in ALL_METRICS else 0)
+        sc_season = st.selectbox("シーズン", selected_seasons, key="sc_season")
+        sc_show_reg = st.toggle("回帰直線を表示", value=True, key="sc_reg")
+        # 順位絞り込み（サイドバーの _rank_filter を流用）
+        use_rank_sc = st.toggle("最終順位で絞り込む", value=(_rank_filter is not None), key="sc_rank")
+
+    with col_sc2:
+        from scipy.stats import linregress
+
+        # 対象シーズンのデータ準備
+        _dg_sc  = dg_all[dg_all["season"] == sc_season]
+        _apf_sc = apf_all[apf_all["season"] == sc_season] if has_apf else pd.DataFrame()
+
+        # N節時点の累積値を計算
+        _sub_v = _dg_sc[_dg_sc["GW"] <= sc_gw].groupby("team").agg(
+            xG_cum    = ("expected_goals",         "sum"),
+            xGC_cum   = ("expected_goals_conceded", "sum"),
+            pts_cum   = ("pts",                    "sum"),
+            gf_cum    = ("gf",                     "sum"),
+            cre_cum   = ("creativity",             "sum"),
+            thr_cum   = ("threat",                 "sum"),
+        ).reset_index()
+        _sub_v["net_xG_cum"] = _sub_v["xG_cum"] - _sub_v["xGC_cum"]
+
+        _fp_sc = _dg_sc.groupby("team")["pts"].sum().reset_index()
+        _fp_sc.columns = ["team", "final_pts"]
+        _sub_v = _sub_v.merge(_fp_sc, on="team")
+
+        if not _apf_sc.empty:
+            _sub_a = _apf_sc[_apf_sc["GW"] <= sc_gw].groupby("team").agg(
+                sot_cum   = ("shots_on_tgt",   "sum"),
+                shot_cum  = ("total_shots",    "sum"),
+                sib_cum   = ("shots_inbox",    "sum"),
+                sot_ag    = ("shots_on_tgt_ag","sum"),
+                poss_avg  = ("possession",     "mean"),
+            ).reset_index()
+            _sub_v = _sub_v.merge(_sub_a, on="team", how="left")
+
+        # 順位フィルタ
+        if use_rank_sc:
+            _fp_ranked = _fp_sc.sort_values("final_pts", ascending=False).reset_index(drop=True)
+            _fp_ranked["rank"] = _fp_ranked.index + 1
+            _lo = rank_range[0] if _rank_filter else 1
+            _hi = rank_range[1] if _rank_filter else 20
+            _valid_teams = _fp_ranked[_fp_ranked["rank"].between(_lo, _hi)]["team"]
+            _sub_v = _sub_v[_sub_v["team"].isin(_valid_teams)]
+
+        col_map_sc = {
+            "xG": "xG_cum", "xGC": "xGC_cum", "Net xG (xG-xGC)": "net_xG_cum",
+            "Goals": "gf_cum", "Points (running)": "pts_cum",
+            "Creativity": "cre_cum", "Threat": "thr_cum",
+            "Shots on Target ⚡": "sot_cum", "Total Shots ⚡": "shot_cum",
+            "Shots in Box ⚡": "sib_cum", "Shots on Tgt Ag ⚡": "sot_ag",
+            "Possession % ⚡": "poss_avg",
+        }
+        sc_col = col_map_sc.get(sc_metric)
+
+        if not sc_col or sc_col not in _sub_v.columns or len(_sub_v) < 3:
+            st.warning("データが不足しています。シーズン・指標・絞り込み条件を確認してください。")
+        else:
+            _x = _sub_v[sc_col].fillna(0).values.astype(float)
+            _y = _sub_v["final_pts"].values.astype(float)
+            _teams = _sub_v["team"].values
+
+            # xGC / Shots on Tgt Ag は符号反転
+            INVERT_SC = {"xGC", "Shots on Tgt Ag ⚡"}
+            _x_plot = -_x if sc_metric in INVERT_SC else _x
+
+            # 図を描画
+            fig_sc, ax_sc = plt.subplots(figsize=(8, 5.5))
+            fig_sc.patch.set_facecolor("#ffffff")
+            ax_sc.set_facecolor("#f8f9fa")
+            ax_sc.grid(color="#e0e0e0", lw=0.5, zorder=0)
+
+            ax_sc.scatter(_x_plot, _y, s=80, zorder=3,
+                           c=[f"#{hash(t)%0xFFFFFF:06x}" for t in _teams],
+                           edgecolors="#555555", lw=0.5, alpha=0.9)
+
+            # チーム名アノテーション
+            for xi, yi, tn in zip(_x_plot, _y, _teams):
+                ax_sc.annotate(tn[:10], (xi, yi),
+                                xytext=(4, 4), textcoords="offset points",
+                                fontsize=7.5, color="#1a1a2e", alpha=0.85)
+
+            # 回帰直線と統計
+            if sc_show_reg and len(_x_plot) >= 3:
+                from scipy.stats import pearsonr as _pr
+                slope, intercept, r_val, p_val, _ = linregress(_x_plot, _y)
+                r_sq = r_val ** 2
+                _xl = np.linspace(_x_plot.min(), _x_plot.max(), 100)
+                ax_sc.plot(_xl, slope * _xl + intercept,
+                            color="#f4a261", lw=2, ls="-", zorder=4,
+                            label=f"y={slope:.2f}x+{intercept:.1f}")
+                ax_sc.text(0.03, 0.97,
+                            f"r = {r_val:+.3f}   R² = {r_sq:.3f}   p = {p_val:.3f}",
+                            transform=ax_sc.transAxes,
+                            va="top", ha="left", fontsize=10, color="#1a1a2e",
+                            bbox=dict(boxstyle="round,pad=0.3",
+                                      fc="#ffffffcc", ec="#cccccc"))
+
+                # 外れ値ハイライト（残差 > 1.5σ）
+                _y_pred = slope * _x_plot + intercept
+                _resid  = _y - _y_pred
+                _thr    = 1.5 * np.std(_resid)
+                for xi, yi, tn, ri in zip(_x_plot, _y, _teams, _resid):
+                    if abs(ri) >= _thr:
+                        ax_sc.annotate(f"← {tn[:10]}",
+                                        (xi, yi), xytext=(6, 0),
+                                        textcoords="offset points",
+                                        fontsize=8, color="#ef4444",
+                                        fontweight="bold")
+
+            _x_label = f"{sc_metric} (inverted)" if sc_metric in INVERT_SC else sc_metric
+            ax_sc.set_xlabel(f"GW1-{sc_gw} cumulative {_x_label}", color="#333333", fontsize=10)
+            ax_sc.set_ylabel("Final Points", color="#333333", fontsize=10)
+            _grp = f" (rank {_lo}-{_hi})" if use_rank_sc else ""
+            ax_sc.set_title(f"{sc_metric} vs Final Points — {sc_season} GW{sc_gw}{_grp}",
+                             color="#1a1a2e", fontweight="bold", fontsize=11)
+            for spine in ax_sc.spines.values():
+                spine.set_color("#cccccc")
+            if sc_show_reg:
+                ax_sc.legend(fontsize=9, facecolor="#ffffff",
+                              edgecolor="#cccccc", labelcolor="#1a1a2e")
+            plt.tight_layout()
+            st.pyplot(fig_sc, use_container_width=True)
+
+            if sc_show_reg and len(_x_plot) >= 3:
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Pearson r", f"{r_val:+.3f}")
+                c2.metric("R²", f"{r_sq:.3f}")
+                c3.metric("p-value", f"{p_val:.3f}",
+                           delta="significant" if p_val < 0.05 else "not significant",
+                           delta_color="normal" if p_val < 0.05 else "off")
 
 with tab_table:
     # Spearman rも追加
